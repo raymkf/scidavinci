@@ -34,6 +34,12 @@ export interface ChartAction {
   text?: string;
 }
 
+export interface ChartElementStyle {
+  color?: string;
+  stroke?: string;
+  strokeWidth?: number;
+}
+
 export interface ChartErrorBar {
   /** Series name this uncertainty belongs to, e.g. "treatment". */
   series: string;
@@ -105,6 +111,14 @@ export interface ChartConfig {
   significance?: ChartSignificance[];
   /** Color palette (optional). */
   colors?: string[];
+  /**
+   * Optional per-element styles for single bars, slices, points, or boxes.
+   *
+   * Keys may be a full generated element id, a semantic key
+   * `${series}@@${category}`, `${series}:${category}`, or just the category
+   * label. Runtime chartActions still override these defaults.
+   */
+  elementStyles?: Record<string, ChartElementStyle>;
   /** Human-readable description of the chart. */
   description?: string;
 }

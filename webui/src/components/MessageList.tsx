@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
 
 import { MessageBubble } from "@/components/MessageBubble";
@@ -11,7 +11,8 @@ interface MessageListProps {
   isStreaming: boolean;
 }
 
-const NEAR_BOTTOM_PX = 48;
+const SHOW_BOTTOM_BUTTON_PX = 96;
+const AUTO_STICK_BOTTOM_PX = 4;
 
 /**
  * Scrollable message log. Auto-sticks to the bottom as new content arrives,
@@ -21,6 +22,8 @@ const NEAR_BOTTOM_PX = 48;
  */
 export function MessageList({ messages, isStreaming }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const autoStickRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
 
   const scrollToBottom = useCallback((smooth = false) => {
@@ -32,24 +35,39 @@ export function MessageList({ messages, isStreaming }: MessageListProps) {
     });
   }, []);
 
-  // Keep the viewport pinned to the bottom as long as the user hasn't
-  // scrolled up. During streaming we do instant jumps (smooth scrolling each
-  // token fights the incoming animations); on settled updates we animate.
+  const updateBottomState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    autoStickRef.current = distance <= AUTO_STICK_BOTTOM_PX;
+    setAtBottom(distance <= SHOW_BOTTOM_BUTTON_PX);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!autoStickRef.current) return;
+    scrollToBottom(false);
+  }, [messages, isStreaming, scrollToBottom]);
+
   useEffect(() => {
-    if (!atBottom) return;
-    scrollToBottom(!isStreaming);
-  }, [messages, isStreaming, atBottom, scrollToBottom]);
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (!autoStickRef.current) return;
+      scrollToBottom(false);
+      updateBottomState();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [scrollToBottom, updateBottomState]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const onScroll = () => {
-      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      setAtBottom(distance < NEAR_BOTTOM_PX);
-    };
+    const onScroll = () => updateBottomState();
+    updateBottomState();
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [updateBottomState]);
 
   if (messages.length === 0) {
     return (
@@ -64,14 +82,14 @@ export function MessageList({ messages, isStreaming }: MessageListProps) {
       <div
         ref={scrollRef}
         className={cn(
-          "h-full overflow-y-auto scroll-smooth",
+          "h-full overflow-y-auto overscroll-contain",
           "[&::-webkit-scrollbar]:w-1.5",
           "[&::-webkit-scrollbar-thumb]:rounded-full",
           "[&::-webkit-scrollbar-thumb]:bg-muted-foreground/30",
           "[&::-webkit-scrollbar-track]:bg-transparent",
         )}
       >
-        <div className="mx-auto flex w-full max-w-[64rem] flex-col gap-6 px-4 pt-4 pb-8">
+        <div ref={contentRef} className="mx-auto flex w-full max-w-[64rem] flex-col gap-6 px-4 pt-4 pb-8">
           {messages.map((m) => (
             <MessageBubble key={m.id} message={m} />
           ))}

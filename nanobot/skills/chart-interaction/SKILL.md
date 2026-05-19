@@ -126,6 +126,39 @@ When you want to display data as an interactive chart, output a fenced code bloc
 When no explicit colors are requested, include either no `colors` field (the
 frontend will apply the journal palette) or use only the journal palette above.
 
+Important bar-chart rule:
+- Do not represent a single-series bar chart as many one-bar series just to
+  give each bar a different color. That creates grouped bars and makes each bar
+  too thin.
+- If the user asks for different colors on individual bars in an existing
+  chart, keep the chart structure unchanged and return `chartActions` targeting
+  the existing bar `elementId`s.
+- If the user asks for a newly generated single-series bar chart where each bar
+  has its own color, keep one numeric field and use `elementStyles` keyed by the
+  bar category or by `${series}@@${category}`:
+
+```chart-json
+{
+  "type": "bar",
+  "title": "Expression by gene",
+  "xField": "gene",
+  "yField": "expression",
+  "yLabel": "Normalized expression",
+  "data": [
+    { "gene": "IL6", "expression": 12.4 },
+    { "gene": "TNF", "expression": 8.7 }
+  ],
+  "elementStyles": {
+    "IL6": { "color": "#D55E00" },
+    "TNF": { "color": "#0072B2" }
+  }
+}
+```
+
+- Do not switch to `bio-plot` or matplotlib just because the user wants
+  individual bar colors. Per-element styling belongs to the interactive chart
+  path.
+
 Supported chart types:
 
 | Type | Description | Required Fields |

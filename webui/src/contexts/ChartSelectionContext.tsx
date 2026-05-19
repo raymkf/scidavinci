@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import type { ChartAction, ChartElementMetadata, SelectedChartElement } from "@/lib/chart-types";
+import type { ChartAction, ChartElementMetadata, ChartElementStyle, SelectedChartElement } from "@/lib/chart-types";
 
 interface ChartSelectionContextValue {
   selectedElements: SelectedChartElement[];
@@ -11,7 +11,7 @@ interface ChartSelectionContextValue {
   /** Clear all selected elements. */
   clearSelection: () => void;
   /** Applied chart actions (e.g. color overrides). */
-  elementStyles: Map<string, { color?: string; stroke?: string; strokeWidth?: number }>;
+  elementStyles: Map<string, ChartElementStyle>;
   /** Apply one or more chart actions. */
   applyActions: (actions: ChartAction[]) => void;
   /** Reset all applied styles. */
@@ -20,7 +20,7 @@ interface ChartSelectionContextValue {
 
 const ChartSelectionContext = createContext<ChartSelectionContextValue | null>(null);
 
-type ElementStyle = { color?: string; stroke?: string; strokeWidth?: number };
+type ElementStyle = ChartElementStyle;
 
 function readPersistedStyles(key?: string | null): Map<string, ElementStyle> {
   if (!key || typeof window === "undefined") return new Map();

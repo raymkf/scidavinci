@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -14,7 +14,8 @@ interface ThreadViewportProps {
   emptyState?: ReactNode;
 }
 
-const NEAR_BOTTOM_PX = 48;
+const SHOW_BOTTOM_BUTTON_PX = 96;
+const AUTO_STICK_BOTTOM_PX = 4;
 
 export function ThreadViewport({
   messages,
@@ -24,6 +25,8 @@ export function ThreadViewport({
 }: ThreadViewportProps) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const autoStickRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
   const hasMessages = messages.length > 0;
 
@@ -36,61 +39,80 @@ export function ThreadViewport({
     });
   }, []);
 
+  const updateBottomState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    autoStickRef.current = distance <= AUTO_STICK_BOTTOM_PX;
+    setAtBottom(distance <= SHOW_BOTTOM_BUTTON_PX);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!autoStickRef.current) return;
+    scrollToBottom(false);
+  }, [messages, isStreaming, scrollToBottom]);
+
   useEffect(() => {
-    if (!atBottom) return;
-    scrollToBottom(!isStreaming);
-  }, [messages, isStreaming, atBottom, scrollToBottom]);
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (!autoStickRef.current) return;
+      scrollToBottom(false);
+      updateBottomState();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [scrollToBottom, updateBottomState]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
-    const onScroll = () => {
-      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      setAtBottom(distance < NEAR_BOTTOM_PX);
-    };
+    const onScroll = () => updateBottomState();
 
-    onScroll();
+    updateBottomState();
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [updateBottomState]);
 
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden">
       <div
         ref={scrollRef}
         className={cn(
-          "absolute inset-0 overflow-y-auto scroll-smooth scrollbar-thin",
+          "absolute inset-0 overflow-y-auto overscroll-contain scrollbar-thin",
           "[&::-webkit-scrollbar]:w-1.5",
           "[&::-webkit-scrollbar-thumb]:rounded-full",
           "[&::-webkit-scrollbar-thumb]:bg-muted-foreground/30",
           "[&::-webkit-scrollbar-track]:bg-transparent",
         )}
       >
-        {hasMessages ? (
-          <div className="mx-auto flex min-h-full w-full max-w-[64rem] flex-col">
-            <div className="flex-1 px-4 pb-20 pt-4">
-              <div className="mx-auto w-full max-w-[49.5rem]">
-                <ThreadMessages messages={messages} />
+        <div ref={contentRef} className="min-h-full">
+          {hasMessages ? (
+            <div className="mx-auto flex min-h-full w-full max-w-[64rem] flex-col">
+              <div className="flex-1 px-4 pb-20 pt-4">
+                <div className="mx-auto w-full max-w-[49.5rem]">
+                  <ThreadMessages messages={messages} />
+                </div>
               </div>
-            </div>
 
-            <div className="sticky bottom-0 z-10 mt-auto bg-background">
-              <div className="px-4 pb-3">
-                {composer}
+              <div className="sticky bottom-0 z-10 mt-auto bg-background">
+                <div className="px-4 pb-3">
+                  {composer}
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="mx-auto flex min-h-full w-full max-w-[64rem] flex-col px-4">
-            <div className="flex w-full flex-1 justify-center pb-16 pt-14 md:pt-[3.5rem]">
-              <div className="flex w-full max-w-[40rem] flex-col gap-5">
-                {emptyState}
-                <div className="w-full">{composer}</div>
+          ) : (
+            <div className="mx-auto flex min-h-full w-full max-w-[64rem] flex-col px-4">
+              <div className="flex w-full flex-1 justify-center pb-16 pt-14 md:pt-[3.5rem]">
+                <div className="flex w-full max-w-[40rem] flex-col gap-5">
+                  {emptyState}
+                  <div className="w-full">{composer}</div>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div

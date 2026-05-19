@@ -23,6 +23,8 @@ import type { DataKey } from "recharts/types/util/types";
 
 import { useChartSelection } from "@/contexts/ChartSelectionContext";
 import { useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
+import { chartElementId, resolveElementColor } from "@/lib/chart-element-styles";
+import { normalizeChartConfig } from "@/lib/chart-normalize";
 import { JOURNAL_CHART_STYLE, journalColor } from "@/lib/chart-style";
 import type { ChartConfig, ChartElementMetadata } from "@/lib/chart-types";
 import { cn } from "@/lib/utils";
@@ -41,14 +43,16 @@ function buildMetadata(
   series: string,
   category: string | number,
   value: number,
+  sourceRow?: Record<string, unknown>,
 ): ChartElementMetadata {
   return {
-    elementId: `${chartId}_${series}_${category}`.replace(/[^a-zA-Z0-9_]/g, "_"),
+    elementId: chartElementId(chartId, series, category),
     chartType: config.type,
     series,
     category,
     value,
     unit: config.unit,
+    sourceRow,
     label: `${category} ${series}: ${value}${config.unit ?? ""}`,
   };
 }
@@ -245,6 +249,7 @@ export function InteractiveChart({
                     field,
                     String(payload[xKey] ?? ""),
                     typeof val === "number" ? val : Number(val) || 0,
+                    payload,
                   );
                   toggleElement(meta);
                 }}
@@ -254,10 +259,19 @@ export function InteractiveChart({
                   const numericVal = typeof val === "number" ? val : Number(val) || 0;
                   const cat = String(entry[xKey] ?? "");
                   const elemid = buildMetadata(config, chartId, field, cat, numericVal).elementId;
+                  const configuredColor = resolveElementColor(
+                    config,
+                    elementStyles,
+                    chartId,
+                    field,
+                    cat,
+                    color,
+                    entry,
+                  );
                   return (
                     <Cell
                       key={i}
-                      fill={resolveColor(elemid, color)}
+                      fill={resolveColor(elemid, configuredColor)}
                       stroke={resolveStroke(elemid) ?? "none"}
                       strokeWidth={resolveStrokeWidth(elemid) ?? 0}
                       style={{ transition: "fill 0.2s, stroke 0.2s" }}
@@ -698,7 +712,7 @@ export function parseChartCodeBlock(code: string): ChartConfig | null {
     const parsed = JSON.parse(code);
     const configVal: Record<string, unknown> = parsed.chart ?? parsed;
     if (!configVal.type || !configVal.data) return null;
-    return configVal as unknown as ChartConfig;
+    return normalizeChartConfig(configVal as unknown as ChartConfig);
   } catch {
     return null;
   }

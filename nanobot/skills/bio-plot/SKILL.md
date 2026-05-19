@@ -29,6 +29,17 @@ For these supported types, this skill must defer to the interactive chart
 protocol. The chart must still follow Nature/Cell/Science-level visual quality,
 but the output should be interactive `chart-json`, not a static image.
 
+Do not take over when the user asks for individual colors on bars, points,
+sectors, or other supported interactive elements. The correct behavior is to
+preserve the interactive chart and emit `chartActions` or per-element style
+metadata. In particular, do not convert one bar chart into many one-bar series
+just to color bars independently, and do not use matplotlib as an escape hatch
+for that request.
+
+For a new single-series bar chart with different colors per bar, keep one
+numeric field and use interactive `elementStyles` keyed by category or
+`${series}@@${category}`. This remains an interactive chart-json figure.
+
 ## Quick Start
 
 ```python

@@ -20,6 +20,7 @@ import { InteractiveChart } from "@/components/InteractiveChart";
 import { Button } from "@/components/ui/button";
 import { useChartSelection } from "@/contexts/ChartSelectionContext";
 import { useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
+import { chartElementId, resolveElementColor } from "@/lib/chart-element-styles";
 import { JOURNAL_CHART_STYLE, JOURNAL_COLORS, journalColor } from "@/lib/chart-style";
 import type { ChartConfig, VisualAnchor } from "@/lib/chart-types";
 import { cn } from "@/lib/utils";
@@ -298,11 +299,13 @@ function ChartThumbnail({
                   key={`${entry[nameKey] ?? "slice"}-${index}`}
                   fill={
                     elementColor(
+                      config,
                       elementStyles,
                       assetId,
                       String(entry[nameKey] ?? ""),
                       String(entry[nameKey] ?? ""),
                       config.colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length],
+                      entry,
                     )
                   }
                 />
@@ -401,11 +404,13 @@ function ChartThumbnail({
                 <Cell
                   key={`${field}-${entryIndex}`}
                   fill={elementColor(
+                    config,
                     elementStyles,
                     assetId,
                     field,
                     String(entry[xKey] ?? ""),
                     config.colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length],
+                    entry,
                   )}
                 />
               ))}
@@ -478,18 +483,16 @@ const DEFAULT_THUMB_COLORS = [
   ...JOURNAL_COLORS,
 ];
 
-function elementId(chartId: string, series: string, category: string | number): string {
-  return `${chartId}_${series}_${category}`.replace(/[^a-zA-Z0-9_]/g, "_");
-}
-
 function elementColor(
+  config: ChartConfig,
   styles: Map<string, { color?: string }>,
   chartId: string,
   series: string,
   category: string | number,
   fallback: string,
+  row?: Record<string, unknown>,
 ): string {
-  return styles.get(elementId(chartId, series, category))?.color ?? fallback;
+  return resolveElementColor(config, styles, chartId, series, category, fallback, row);
 }
 
 function seriesColor(
@@ -501,7 +504,7 @@ function seriesColor(
   fallback: string,
 ): string {
   for (const entry of data) {
-    const color = styles.get(elementId(chartId, series, String(entry[xKey] ?? "")))?.color;
+    const color = styles.get(chartElementId(chartId, series, String(entry[xKey] ?? "")))?.color;
     if (color) return color;
   }
   return fallback;
@@ -844,11 +847,13 @@ function drawCartesianExport(
         const baseline = yFor(0);
         const w = barW * 0.82;
         ctx.fillStyle = elementColor(
+          config,
           elementStyles,
           assetId,
           field,
           category,
           config.colors?.[fieldIndex] ?? DEFAULT_THUMB_COLORS[fieldIndex % DEFAULT_THUMB_COLORS.length],
+          row,
         );
         ctx.fillRect(x, Math.min(y, baseline), w, Math.abs(baseline - y));
         barCenters.set(`${field}@@${category}`, { x: x + w / 2, y, value });
@@ -949,11 +954,13 @@ function drawPieExport(
     const value = Math.max(0, Number(row[valueKey] ?? 0) || 0);
     const end = start + (value / total) * Math.PI * 2;
     const color = elementColor(
+      config,
       elementStyles,
       assetId,
       name,
       name,
       config.colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length],
+      row,
     );
     ctx.beginPath();
     ctx.moveTo(cx, cy);
@@ -972,11 +979,13 @@ function drawPieExport(
     data.map((row) => String(row[nameKey] ?? "")),
     data.map((row, index) =>
       elementColor(
+        config,
         elementStyles,
         assetId,
         String(row[nameKey] ?? ""),
         String(row[nameKey] ?? ""),
         config.colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length],
+        row,
       ),
     ),
     1120,
