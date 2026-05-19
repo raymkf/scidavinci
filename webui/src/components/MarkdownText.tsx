@@ -5,10 +5,15 @@ import { cn } from "@/lib/utils";
 interface MarkdownTextProps {
   children: string;
   className?: string;
+  sourceId?: string;
 }
 
 const loadMarkdownRenderer = () => import("@/components/MarkdownTextRenderer");
 const LazyMarkdownRenderer = lazy(loadMarkdownRenderer);
+
+function hideChartJsonWhileLoading(markdown: string): string {
+  return markdown.replace(/```(?:chart-json|chart)\b[\s\S]*?(?:```|$)/g, "Rendering interactive chart…");
+}
 
 export function preloadMarkdownText(): void {
   void loadMarkdownRenderer();
@@ -19,7 +24,7 @@ export function preloadMarkdownText(): void {
  * ``remark-math`` / ``rehype-katex``, and fenced code blocks delegated to
  * ``CodeBlock`` for copy-to-clipboard and syntax highlighting.
  */
-export function MarkdownText({ children, className }: MarkdownTextProps) {
+export function MarkdownText({ children, className, sourceId }: MarkdownTextProps) {
   return (
     <Suspense
       fallback={
@@ -29,11 +34,13 @@ export function MarkdownText({ children, className }: MarkdownTextProps) {
             className,
           )}
         >
-          {children}
+          {hideChartJsonWhileLoading(children)}
         </div>
       }
     >
-      <LazyMarkdownRenderer className={className}>{children}</LazyMarkdownRenderer>
+      <LazyMarkdownRenderer className={className} sourceId={sourceId}>
+        {children}
+      </LazyMarkdownRenderer>
     </Suspense>
   );
 }

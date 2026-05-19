@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { MarkdownText } from "@/components/MarkdownText";
+import { VisualAssetImage } from "@/components/VisualAssetImage";
 import { cn } from "@/lib/utils";
 import type { UIImage, UIMediaAttachment, UIMessage } from "@/lib/types";
 
@@ -66,9 +67,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         <TypingDots />
       ) : (
         <>
-          <MarkdownText>{message.content}</MarkdownText>
+          <MarkdownText sourceId={message.id}>{message.content}</MarkdownText>
           {message.isStreaming && <StreamCursor />}
-          {media.length > 0 ? <MessageMedia media={media} align="left" /> : null}
+          {media.length > 0 ? (
+            <MessageMedia media={media} align="left" messageId={message.id} />
+          ) : null}
         </>
       )}
     </div>
@@ -78,9 +81,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 function MessageMedia({
   media,
   align,
+  messageId,
 }: {
   media: UIMediaAttachment[];
   align: "left" | "right";
+  messageId?: string;
 }) {
   if (media.length === 0) return null;
   const images = media
@@ -95,7 +100,14 @@ function MessageMedia({
         align === "right" ? "justify-end" : "justify-start",
       )}
     >
-      {images.length > 0 ? <UserImages images={images} align={align} /> : null}
+      {images.length > 0 ? (
+        <UserImages
+          images={images}
+          align={align}
+          sourceMessageId={messageId}
+          registerAsVisual={align === "left"}
+        />
+      ) : null}
       {nonImages.map((item, i) => (
         <MediaCell key={`${item.url ?? item.name ?? item.kind}-${i}`} media={item} />
       ))}
@@ -161,9 +173,13 @@ function MediaCell({ media }: { media: UIMediaAttachment }) {
 function UserImages({
   images,
   align = "right",
+  sourceMessageId,
+  registerAsVisual = false,
 }: {
   images: UIImage[];
   align?: "left" | "right";
+  sourceMessageId?: string;
+  registerAsVisual?: boolean;
 }) {
   const { t } = useTranslation();
   // Only real-URL images can open in the lightbox; historical-replay
@@ -190,8 +206,11 @@ function UserImages({
           <UserImageCell
             key={`${img.url ?? "placeholder"}-${i}`}
             image={img}
+            index={i}
             placeholderLabel={t("message.imageAttachment")}
             openLabel={t("lightbox.open")}
+            sourceMessageId={sourceMessageId}
+            registerAsVisual={registerAsVisual}
             onOpen={
               originalToViewable.has(i)
                 ? () => setLightboxIndex(originalToViewable.get(i)!)
@@ -214,13 +233,19 @@ function UserImages({
 
 function UserImageCell({
   image,
+  index,
   placeholderLabel,
   openLabel,
+  sourceMessageId,
+  registerAsVisual,
   onOpen,
 }: {
   image: UIImage;
+  index: number;
   placeholderLabel: string;
   openLabel: string;
+  sourceMessageId?: string;
+  registerAsVisual?: boolean;
   onOpen?: () => void;
 }) {
   const hasUrl = typeof image.url === "string" && image.url.length > 0;
@@ -243,7 +268,11 @@ function UserImageCell({
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
         )}
       >
-        <img
+        <VisualAssetImage
+          assetId={`message-${sourceMessageId ?? "local"}-image-${index}`}
+          title={image.name ?? `Generated image ${index + 1}`}
+          sourceMessageId={sourceMessageId}
+          registerAsVisual={registerAsVisual}
           src={image.url}
           alt={image.name ?? ""}
           loading="lazy"

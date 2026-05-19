@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { ChartElementChips } from "@/components/ChartElementChips";
+import { VisualAnchorChips } from "@/components/VisualAnchorChips";
 import { Button } from "@/components/ui/button";
 import {
   useAttachedImages,
@@ -24,6 +26,9 @@ import {
   MAX_IMAGES_PER_MESSAGE,
 } from "@/hooks/useAttachedImages";
 import { useClipboardAndDrop } from "@/hooks/useClipboardAndDrop";
+import { useChartSelection } from "@/contexts/ChartSelectionContext";
+import { useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
+import { detectColorChangeFromMessage } from "@/lib/chart-actions";
 import type { OutboundMedia } from "@/lib/types";
 import type { SendImage } from "@/hooks/useNanobotStream";
 import { cn } from "@/lib/utils";
@@ -86,6 +91,8 @@ export function ThreadComposer({
   const isHero = variant === "hero";
   const resolvedPlaceholder =
     placeholder ?? t("thread.composer.placeholderThread");
+  const { selectedElements, clearSelection, applyActions } = useChartSelection();
+  const { anchors, clearAnchors } = useVisualWorkspace();
 
   const { images, enqueue, remove, clear, encoding, full } =
     useAttachedImages();
@@ -203,6 +210,38 @@ export function ThreadComposer({
   const submit = useCallback(() => {
     if (!canSend) return;
     const trimmed = value.trim();
+    // Prepend selected chart elements as structured context for the LLM
+    let enrichedContent = trimmed;
+    if (selectedElements.length > 0) {
+      // Apply local color changes if the user mentions a color
+      const colorActions = detectColorChangeFromMessage(trimmed, selectedElements);
+      if (colorActions.length > 0) {
+        applyActions(colorActions);
+      }
+      const chartContext = selectedElements
+        .map(
+          (el) => {
+            const sourceRow = el.sourceRow
+              ? `, sourceRow: ${JSON.stringify(el.sourceRow)}`
+              : "";
+            return `[${el.label}] (elementId: ${el.elementId}, chartType: ${el.chartType}, series: ${el.series}, category: ${el.category}, value: ${el.value}${sourceRow})`;
+          },
+        )
+        .join("\n");
+      enrichedContent = `[Selected Chart Elements]\n${chartContext}\n\n${trimmed}`;
+    }
+    if (anchors.length > 0) {
+      const visualContext = anchors
+        .map((anchor) => {
+          const coords =
+            typeof anchor.xPct === "number" && typeof anchor.yPct === "number"
+              ? `, xPct: ${anchor.xPct.toFixed(1)}, yPct: ${anchor.yPct.toFixed(1)}`
+              : "";
+          return `[${anchor.label}] (assetId: ${anchor.assetId}, assetTitle: ${anchor.assetTitle}, kind: ${anchor.kind}${coords})`;
+        })
+        .join("\n");
+      enrichedContent = `[Selected Visual Anchors]\n${visualContext}\n\n${enrichedContent}`;
+    }
     // Share the same normalized ``data:`` URL with both the wire payload and
     // the optimistic bubble preview: data URLs are self-contained (no blob
     // lifetime, safe under React StrictMode double-mount) and keep the
@@ -224,9 +263,12 @@ export function ThreadComposer({
             name: d.file.name,
           }))
         : undefined;
-    onSend(trimmed, payload, docPayload);
+    onSend(enrichedContent, payload, docPayload);
     setValue("");
     setInlineError(null);
+    // Clear chart selection after sending
+    clearSelection();
+    clearAnchors();
     // Bubble owns the data URL copy; safe to revoke every staged blob
     // preview here without affecting the rendered message.
     clear();
@@ -238,7 +280,7 @@ export function ThreadComposer({
         el.focus();
       }
     });
-  }, [canSend, clear, onSend, readyImages, readyDocs, value]);
+  }, [canSend, clear, onSend, readyImages, readyDocs, value, selectedElements, clearSelection, anchors, clearAnchors, applyActions]);
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -432,6 +474,8 @@ export function ThreadComposer({
             {inlineError}
           </div>
         ) : null}
+        <ChartElementChips />
+        <VisualAnchorChips />
         <div
           className={cn(
             "flex items-center justify-between gap-2",

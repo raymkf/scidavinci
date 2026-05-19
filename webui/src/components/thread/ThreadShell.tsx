@@ -6,8 +6,12 @@ import { ThreadComposer } from "@/components/thread/ThreadComposer";
 import { ThreadHeader } from "@/components/thread/ThreadHeader";
 import { StreamErrorNotice } from "@/components/thread/StreamErrorNotice";
 import { ThreadViewport } from "@/components/thread/ThreadViewport";
+import { VisualWorkspacePanel } from "@/components/VisualWorkspacePanel";
+import { ChartSelectionProvider, useChartSelection } from "@/contexts/ChartSelectionContext";
+import { VisualWorkspaceProvider } from "@/contexts/VisualWorkspaceContext";
 import { useNanobotStream } from "@/hooks/useNanobotStream";
 import { useSessionHistory } from "@/hooks/useSessions";
+import { parseChartActionsFromContent } from "@/lib/chart-actions";
 import type { ChatSummary, UIMessage } from "@/lib/types";
 import { useClient } from "@/providers/ClientProvider";
 
@@ -18,6 +22,27 @@ interface ThreadShellProps {
   onGoHome: () => void;
   onNewChat: () => Promise<string | null>;
   hideSidebarToggleOnDesktop?: boolean;
+}
+
+/**
+ * Watches assistant messages for embedded chartActions JSON and applies them.
+ */
+function ChartActionWatcher({ messages }: { messages: UIMessage[] }) {
+  const { applyActions } = useChartSelection();
+  const appliedRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    for (const msg of messages) {
+      if (msg.role !== "assistant" || appliedRef.current.has(msg.id)) continue;
+      const actions = parseChartActionsFromContent(msg.content);
+      if (actions.length > 0) {
+        applyActions(actions);
+        appliedRef.current.add(msg.id);
+      }
+    }
+  }, [messages, applyActions]);
+
+  return null;
 }
 
 function toModelBadgeLabel(modelName: string | null): string | null {
@@ -149,60 +174,71 @@ export function ThreadShell({
   );
 
   return (
-    <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <ThreadHeader
-        title={title}
-        onToggleSidebar={onToggleSidebar}
-        onGoHome={onGoHome}
-        hideSidebarToggleOnDesktop={hideSidebarToggleOnDesktop}
-      />
-      <ThreadViewport
-        messages={messages}
-        isStreaming={isStreaming}
-        emptyState={emptyState}
-        composer={
-          <>
-            {streamError ? (
-              <StreamErrorNotice
-                error={streamError}
-                onDismiss={dismissStreamError}
-              />
-            ) : null}
-            {pendingAsk ? (
-              <AskUserPrompt
-                question={pendingAsk.question}
-                buttons={pendingAsk.buttons}
-                onAnswer={send}
-              />
-            ) : null}
-            {session ? (
-              <ThreadComposer
-                onSend={send}
-                disabled={!chatId}
-                placeholder={
-                  showHeroComposer
-                    ? t("thread.composer.placeholderHero")
-                    : t("thread.composer.placeholderThread")
-                }
-                modelLabel={toModelBadgeLabel(modelName)}
-                variant={showHeroComposer ? "hero" : "thread"}
-              />
-            ) : (
-              <ThreadComposer
-                onSend={handleWelcomeSend}
-                disabled={booting}
-                placeholder={
-                  booting
-                    ? t("thread.composer.placeholderOpening")
-                    : t("thread.composer.placeholderHero")
-                }
-                modelLabel={toModelBadgeLabel(modelName)}
-                variant="hero"
-              />
-            )}
-          </>
-        }
-      />
-    </section>
+    <ChartSelectionProvider
+      key={chatId ?? "welcome"}
+      persistenceKey={chatId ? `nanobot.chartStyles.${chatId}` : null}
+    >
+      <VisualWorkspaceProvider>
+        <ChartActionWatcher messages={messages} />
+        <section className="relative flex min-h-0 flex-1 overflow-hidden">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <ThreadHeader
+              title={title}
+              onToggleSidebar={onToggleSidebar}
+              onGoHome={onGoHome}
+              hideSidebarToggleOnDesktop={hideSidebarToggleOnDesktop}
+            />
+            <ThreadViewport
+              messages={messages}
+              isStreaming={isStreaming}
+              emptyState={emptyState}
+              composer={
+                <>
+                  {streamError ? (
+                    <StreamErrorNotice
+                      error={streamError}
+                      onDismiss={dismissStreamError}
+                    />
+                  ) : null}
+                  {pendingAsk ? (
+                    <AskUserPrompt
+                      question={pendingAsk.question}
+                      buttons={pendingAsk.buttons}
+                      onAnswer={send}
+                    />
+                  ) : null}
+                  {session ? (
+                    <ThreadComposer
+                      onSend={send}
+                      disabled={!chatId}
+                      placeholder={
+                        showHeroComposer
+                          ? t("thread.composer.placeholderHero")
+                          : t("thread.composer.placeholderThread")
+                      }
+                      modelLabel={toModelBadgeLabel(modelName)}
+                      variant={showHeroComposer ? "hero" : "thread"}
+                    />
+                  ) : (
+                    <ThreadComposer
+                      onSend={handleWelcomeSend}
+                      disabled={booting}
+                      placeholder={
+                        booting
+                          ? t("thread.composer.placeholderOpening")
+                          : t("thread.composer.placeholderHero")
+                      }
+                      modelLabel={toModelBadgeLabel(modelName)}
+                      variant="hero"
+                    />
+                  )}
+                </>
+              }
+            />
+          </div>
+          <VisualWorkspacePanel />
+        </section>
+      </VisualWorkspaceProvider>
+    </ChartSelectionProvider>
   );
 }

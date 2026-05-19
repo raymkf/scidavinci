@@ -4,6 +4,9 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 
 import { CodeBlock } from "@/components/CodeBlock";
+import { InteractiveChart, parseChartCodeBlock } from "@/components/InteractiveChart";
+import { VisualAssetImage } from "@/components/VisualAssetImage";
+import remarkTableToChart from "@/lib/remark-table-to-chart";
 import { cn } from "@/lib/utils";
 
 import "katex/dist/katex.min.css";
@@ -11,6 +14,15 @@ import "katex/dist/katex.min.css";
 interface MarkdownTextRendererProps {
   children: string;
   className?: string;
+  sourceId?: string;
+}
+
+function stableHash(value: string): string {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 /**
@@ -20,6 +32,7 @@ interface MarkdownTextRendererProps {
 export default function MarkdownTextRenderer({
   children,
   className,
+  sourceId = "message",
 }: MarkdownTextRendererProps) {
   return (
     <div
@@ -41,7 +54,7 @@ export default function MarkdownTextRenderer({
       style={{ lineHeight: "var(--cjk-line-height)" }}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, remarkTableToChart, remarkMath]}
         rehypePlugins={[rehypeKatex]}
         components={{
           code({ className: cls, children: kids, ...props }) {
@@ -59,8 +72,27 @@ export default function MarkdownTextRenderer({
                 </code>
               );
             }
+            const lang = match[1];
             const code = String(kids).replace(/\n$/, "");
-            return <CodeBlock language={match[1]} code={code} className="my-3" />;
+            // Render chart-json code blocks as interactive charts
+            if (lang === "chart-json" || lang === "chart") {
+              const chartConfig = parseChartCodeBlock(code);
+              if (chartConfig) {
+                return (
+                  <InteractiveChart
+                    config={chartConfig}
+                    assetId={`${sourceId}-chart-${stableHash(code)}`}
+                    sourceMessageId={sourceId}
+                  />
+                );
+              }
+              return (
+                <div className="my-3 rounded-md border border-border/60 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+                  Rendering interactive chart…
+                </div>
+              );
+            }
+            return <CodeBlock language={lang} code={code} className="my-3" />;
           },
           pre({ children: markdownChildren }) {
             return <>{markdownChildren}</>;
@@ -76,6 +108,25 @@ export default function MarkdownTextRenderer({
               >
                 {markdownChildren}
               </a>
+            );
+          },
+          img({ src, alt, ...props }) {
+            const source = typeof src === "string" ? src : "";
+            const title = alt || source.split("/").pop() || "Generated image";
+            return (
+              <VisualAssetImage
+                assetId={`${sourceId}-image-${stableHash(source)}`}
+                title={title}
+                sourceMessageId={sourceId}
+                src={source}
+                alt={alt ?? ""}
+                loading="lazy"
+                decoding="async"
+                draggable={false}
+                registerAsVisual={!!source}
+                className="my-3 max-h-[34rem] rounded-md border border-border/60 object-contain"
+                {...props}
+              />
             );
           },
         }}
