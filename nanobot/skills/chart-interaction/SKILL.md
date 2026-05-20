@@ -91,6 +91,11 @@ Priority rule:
   or when the user explicitly asks for PDF/TIFF/static publication export.
 - When matplotlib is necessary, also provide a paired `chart-json` version if
   the underlying data can be represented by a supported interactive type.
+- Do not emit unexplained figures. If you output one or more charts, include a
+  short natural-language reason for each chart before or after it: what data it
+  visualizes, why it is useful for the user's request, and the main takeaway.
+- Avoid generating multiple alternative charts unless the user asks for
+  alternatives or each chart has a distinct stated purpose.
 
 When you want to display data as an interactive chart, output a fenced code block with language `chart-json`:
 
@@ -155,9 +160,8 @@ Important bar-chart rule:
 }
 ```
 
-- Do not switch to `bio-plot` or matplotlib just because the user wants
-  individual bar colors. Per-element styling belongs to the interactive chart
-  path.
+- Do not switch to matplotlib just because the user wants individual bar
+  colors. Per-element styling belongs to the interactive chart path.
 
 Supported chart types:
 

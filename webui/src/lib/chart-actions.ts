@@ -107,8 +107,10 @@ export function parseChartActionsFromContent(
     }
     const jsonStr = content.slice(startIdx, endIdx);
     const parsed = JSON.parse(jsonStr);
-    if (parsed.chartActions && Array.isArray(parsed.chartActions)) {
-      return parsed.chartActions as ChartAction[];
+    const chartActions = Array.isArray(parsed.chartActions) ? parsed.chartActions : [];
+    const imageActions = Array.isArray(parsed.imageActions) ? parsed.imageActions : [];
+    if (chartActions.length > 0 || imageActions.length > 0) {
+      return [...chartActions, ...imageActions] as ChartAction[];
     }
   } catch {
     // Not valid JSON, skip

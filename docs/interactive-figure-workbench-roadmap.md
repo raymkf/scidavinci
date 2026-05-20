@@ -19,14 +19,14 @@ Observed bug:
 - User asked the model to change every bar in a bar chart to a different color.
 - The model regenerated the chart using one series per bar.
 - Recharts then rendered a grouped bar chart where every bar became extremely thin because each bar used only `1 / seriesCount` of the category width.
-- When asked to fix it, the model replied that `chart-json` cannot support independent coloring in a single-series bar chart and tried to switch back to `bio-plot` static output.
+- When asked to fix it, the model replied that `chart-json` cannot support independent coloring in a single-series bar chart and tried to fall back to static matplotlib output.
 
 Desired behavior:
 
 - For an existing chart, the model should use `chartActions` targeting existing `elementId`s.
 - For a newly generated single-series bar chart, it should remain a single `yField`/`yFields` entry and rely on per-element style overrides rather than inventing many series.
 - The frontend should support durable per-element fills for bar elements, including export and thumbnail rendering.
-- `bio-plot` must not take over just because the user requests per-bar colors.
+- matplotlib must not take over just because the user requests per-bar colors.
 
 Implementation notes:
 

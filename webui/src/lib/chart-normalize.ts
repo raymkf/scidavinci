@@ -232,10 +232,13 @@ export function applyFigureInteractionOverrides(
       ...(figure.layout ?? {}),
       ...(overrides.layout ?? {}),
       background: {
+        color: "#ffffff",
         ...(figure.layout?.background ?? {}),
         ...(overrides.layout?.background ?? {}),
         ...(overrides.background ?? {}),
       },
+      plotArea: overrides.layout?.plotArea ?? figure.layout?.plotArea ?? "auto",
+      margin: overrides.layout?.margin ?? figure.layout?.margin,
     },
     axes: {
       ...figure.axes,

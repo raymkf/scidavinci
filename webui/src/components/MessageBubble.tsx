@@ -1,10 +1,9 @@
-import { useState } from "react";
-import { ChevronRight, FileIcon, ImageIcon, PlaySquare, Wrench } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronRight, FileIcon, PlaySquare, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { ImageLightbox } from "@/components/ImageLightbox";
 import { MarkdownText } from "@/components/MarkdownText";
-import { VisualAssetImage } from "@/components/VisualAssetImage";
+import { useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
 import { cn } from "@/lib/utils";
 import type { UIImage, UIMediaAttachment, UIMessage } from "@/lib/types";
 
@@ -31,18 +30,26 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   if (message.role === "user") {
     const images = message.images ?? [];
     const media = message.media ?? [];
-    const hasImages = images.length > 0;
     const hasMedia = media.length > 0;
     const hasText = message.content.trim().length > 0;
     return (
       <div
+        data-message-id={message.id}
         className={cn(
           "group ml-auto flex max-w-[min(85%,36rem)] flex-col items-end gap-1.5",
           baseAnim,
         )}
       >
-        {hasImages ? <UserImages images={images} align="right" /> : null}
-        {!hasImages && hasMedia ? (
+        <WorkspaceImageRegistrars
+          images={[
+            ...images,
+            ...media.filter((item) => item.kind === "image").map(({ url, name }) => ({ url, name })),
+          ]}
+          sourceMessageId={message.id}
+          assetPrefix={`message-${message.id}-user-image`}
+          defaultTitle="Uploaded image"
+        />
+        {hasMedia ? (
           <MessageMedia media={media} align="right" />
         ) : null}
         {hasText ? (
@@ -61,16 +68,27 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
   const empty = message.content.trim().length === 0;
   const media = message.media ?? [];
+  const visibleContent = stripChartActionJson(message.content);
   return (
-    <div className={cn("w-full text-sm", baseAnim)} style={{ lineHeight: "var(--cjk-line-height)" }}>
+    <div data-message-id={message.id} className={cn("w-full text-sm", baseAnim)} style={{ lineHeight: "var(--cjk-line-height)" }}>
       {empty && message.isStreaming ? (
         <TypingDots />
       ) : (
         <>
-          <MarkdownText sourceId={message.id}>{message.content}</MarkdownText>
+          <WorkspaceImageRegistrars
+            images={media.filter((item) => item.kind === "image").map(({ url, name }) => ({ url, name }))}
+            sourceMessageId={message.id}
+            assetPrefix={`message-${message.id}-assistant-image`}
+            defaultTitle="Generated image"
+          />
+          {visibleContent.trim().length > 0 ? (
+            <MarkdownText sourceId={message.id}>{visibleContent}</MarkdownText>
+          ) : !message.isStreaming ? (
+            <p className="text-sm text-muted-foreground">已应用到工作台。</p>
+          ) : null}
           {message.isStreaming && <StreamCursor />}
           {media.length > 0 ? (
-            <MessageMedia media={media} align="left" messageId={message.id} />
+            <MessageMedia media={media} align="left" />
           ) : null}
         </>
       )}
@@ -81,17 +99,13 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 function MessageMedia({
   media,
   align,
-  messageId,
 }: {
   media: UIMediaAttachment[];
   align: "left" | "right";
-  messageId?: string;
 }) {
   if (media.length === 0) return null;
-  const images = media
-    .filter((item) => item.kind === "image")
-    .map(({ url, name }) => ({ url, name }));
   const nonImages = media.filter((item) => item.kind !== "image");
+  if (nonImages.length === 0) return null;
 
   return (
     <div
@@ -100,19 +114,135 @@ function MessageMedia({
         align === "right" ? "justify-end" : "justify-start",
       )}
     >
-      {images.length > 0 ? (
-        <UserImages
-          images={images}
-          align={align}
-          sourceMessageId={messageId}
-          registerAsVisual={align === "left"}
-        />
-      ) : null}
       {nonImages.map((item, i) => (
         <MediaCell key={`${item.url ?? item.name ?? item.kind}-${i}`} media={item} />
       ))}
     </div>
   );
+}
+
+function WorkspaceImageRegistrars({
+  images,
+  sourceMessageId,
+  assetPrefix,
+  defaultTitle,
+}: {
+  images: UIImage[];
+  sourceMessageId?: string;
+  assetPrefix: string;
+  defaultTitle: string;
+}) {
+  const { registerAsset } = useVisualWorkspace();
+  const registeredRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    images.forEach((image, index) => {
+      if (!image.url) return;
+      const id = `${assetPrefix}-${stableHash(image.url)}-${index}`;
+      if (registeredRef.current.has(id)) return;
+      registeredRef.current.add(id);
+      registerAsset({
+        id,
+        kind: "image",
+        title: image.name ?? `${defaultTitle} ${index + 1}`,
+        sourceMessageId,
+        createdAt: Date.now(),
+        url: image.url,
+      });
+    });
+  }, [assetPrefix, defaultTitle, images, registerAsset, sourceMessageId]);
+
+  return null;
+}
+
+function stableHash(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function stripChartActionJson(content: string): string {
+  let result = content;
+  let cursor = 0;
+  while (cursor < result.length) {
+    const start = result.indexOf("{", cursor);
+    if (start === -1) break;
+    const end = findJsonObjectEnd(result, start);
+    if (end === -1) break;
+    const candidate = result.slice(start, end);
+    if (looksLikeOperationalJson(candidate)) {
+      result = `${result.slice(0, start)}${result.slice(end)}`;
+      cursor = start;
+    } else {
+      cursor = end;
+    }
+  }
+  return result
+    .replace(/```(?:json)?\s*```/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function looksLikeOperationalJson(jsonText: string): boolean {
+  try {
+    const parsed = JSON.parse(jsonText) as unknown;
+    return hasOperationalKey(parsed);
+  } catch {
+    return /"(chartActions|imageActions|activeAssetId|targetAssetId|editTarget|assetId)"\s*:/.test(jsonText);
+  }
+}
+
+function hasOperationalKey(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some(hasOperationalKey);
+  const object = value as Record<string, unknown>;
+  const keys = Object.keys(object);
+  if (keys.some((key) => [
+    "chartActions",
+    "imageActions",
+    "activeAssetId",
+    "targetAssetId",
+    "editTarget",
+  ].includes(key))) {
+    return true;
+  }
+  if (
+    keys.includes("assetId")
+    && keys.some((key) => ["action", "type", "prompt", "edits", "style"].includes(key))
+  ) {
+    return true;
+  }
+  return Object.values(object).some(hasOperationalKey);
+}
+
+function findJsonObjectEnd(content: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < content.length; i += 1) {
+    const char = content[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return -1;
 }
 
 function MediaCell({ media }: { media: UIMediaAttachment }) {
@@ -152,149 +282,6 @@ function MediaCell({ media }: { media: UIMediaAttachment }) {
     >
       <Icon className="h-4 w-4 flex-none" aria-hidden />
       <span className="truncate">{media.name ?? label}</span>
-    </div>
-  );
-}
-
-/**
- * Right-aligned preview row for images attached to a user turn.
- *
- * Visual follows agent-chat-ui: a single wrapping row of fixed-size square
- * thumbnails that stay modest next to the text pill regardless of how many
- * images are attached.
- *
- * The URL is expected to be a self-contained ``data:`` URL (the Composer
- * hands the normalized base64 payload to the optimistic bubble so that the
- * preview survives React StrictMode double-mount — blob URLs would be
- * revoked by the Composer's cleanup before remount). Historical replays
- * have no URL (the backend strips data URLs before persisting), so we
- * render a labelled placeholder tile instead of a broken ``<img>``.
- */
-function UserImages({
-  images,
-  align = "right",
-  sourceMessageId,
-  registerAsVisual = false,
-}: {
-  images: UIImage[];
-  align?: "left" | "right";
-  sourceMessageId?: string;
-  registerAsVisual?: boolean;
-}) {
-  const { t } = useTranslation();
-  // Only real-URL images can open in the lightbox; historical-replay
-  // placeholders (no URL) have nothing to zoom into.
-  const viewable = images
-    .map((img, i) => ({ img, i }))
-    .filter(({ img }) => typeof img.url === "string" && img.url.length > 0);
-  const viewableImages = viewable.map(({ img }) => img);
-  const originalToViewable = new Map<number, number>(
-    viewable.map(({ i }, v) => [i, v]),
-  );
-
-  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-
-  return (
-    <>
-      <div
-        className={cn(
-          "flex flex-wrap items-end gap-2",
-          align === "right" ? "ml-auto justify-end" : "mr-auto justify-start",
-        )}
-      >
-        {images.map((img, i) => (
-          <UserImageCell
-            key={`${img.url ?? "placeholder"}-${i}`}
-            image={img}
-            index={i}
-            placeholderLabel={t("message.imageAttachment")}
-            openLabel={t("lightbox.open")}
-            sourceMessageId={sourceMessageId}
-            registerAsVisual={registerAsVisual}
-            onOpen={
-              originalToViewable.has(i)
-                ? () => setLightboxIndex(originalToViewable.get(i)!)
-                : undefined
-            }
-          />
-        ))}
-      </div>
-      <ImageLightbox
-        images={viewableImages}
-        index={lightboxIndex}
-        onIndexChange={setLightboxIndex}
-        onOpenChange={(open) => {
-          if (!open) setLightboxIndex(null);
-        }}
-      />
-    </>
-  );
-}
-
-function UserImageCell({
-  image,
-  index,
-  placeholderLabel,
-  openLabel,
-  sourceMessageId,
-  registerAsVisual,
-  onOpen,
-}: {
-  image: UIImage;
-  index: number;
-  placeholderLabel: string;
-  openLabel: string;
-  sourceMessageId?: string;
-  registerAsVisual?: boolean;
-  onOpen?: () => void;
-}) {
-  const hasUrl = typeof image.url === "string" && image.url.length > 0;
-  const tileClasses = cn(
-    "relative h-24 w-24 overflow-hidden rounded-[14px] border border-border/60 bg-muted/40",
-    "shadow-[0_6px_18px_-14px_rgba(0,0,0,0.45)]",
-  );
-
-  if (hasUrl && onOpen) {
-    return (
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-label={image.name ? `${openLabel}: ${image.name}` : openLabel}
-        title={image.name ?? undefined}
-        className={cn(
-          tileClasses,
-          "cursor-zoom-in transition-transform duration-150 motion-reduce:transition-none",
-          "hover:scale-[1.02] hover:ring-2 hover:ring-primary/30",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
-        )}
-      >
-        <VisualAssetImage
-          assetId={`message-${sourceMessageId ?? "local"}-image-${index}`}
-          title={image.name ?? `Generated image ${index + 1}`}
-          sourceMessageId={sourceMessageId}
-          registerAsVisual={registerAsVisual}
-          src={image.url}
-          alt={image.name ?? ""}
-          loading="lazy"
-          decoding="async"
-          draggable={false}
-          className="h-full w-full object-cover"
-        />
-      </button>
-    );
-  }
-
-  return (
-    <div className={tileClasses} title={image.name ?? undefined}>
-      <div
-        className="flex h-full w-full flex-col items-center justify-center gap-1 px-2 text-[11px] text-muted-foreground"
-        aria-label={placeholderLabel}
-      >
-        <ImageIcon className="h-4 w-4 flex-none" aria-hidden />
-        <span className="line-clamp-2 text-center leading-tight">
-          {image.name ?? placeholderLabel}
-        </span>
-      </div>
     </div>
   );
 }

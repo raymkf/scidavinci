@@ -8,7 +8,7 @@ import { StreamErrorNotice } from "@/components/thread/StreamErrorNotice";
 import { ThreadViewport } from "@/components/thread/ThreadViewport";
 import { VisualWorkspacePanel } from "@/components/VisualWorkspacePanel";
 import { ChartSelectionProvider, useChartSelection } from "@/contexts/ChartSelectionContext";
-import { VisualWorkspaceProvider } from "@/contexts/VisualWorkspaceContext";
+import { VisualWorkspaceProvider, useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
 import { useNanobotStream } from "@/hooks/useNanobotStream";
 import { useSessionHistory } from "@/hooks/useSessions";
 import { parseChartActionsFromContent } from "@/lib/chart-actions";
@@ -29,6 +29,7 @@ interface ThreadShellProps {
  */
 function ChartActionWatcher({ messages }: { messages: UIMessage[] }) {
   const { applyActions } = useChartSelection();
+  const { activeAsset, updateAssetBackground } = useVisualWorkspace();
   const appliedRef = useRef(new Set<string>());
 
   useEffect(() => {
@@ -36,11 +37,18 @@ function ChartActionWatcher({ messages }: { messages: UIMessage[] }) {
       if (msg.role !== "assistant" || appliedRef.current.has(msg.id)) continue;
       const actions = parseChartActionsFromContent(msg.content);
       if (actions.length > 0) {
+        if (activeAsset?.kind === "image") {
+          actions.forEach((action) => {
+            if (action.type === "update_background") {
+              updateAssetBackground(activeAsset.id, action.patch);
+            }
+          });
+        }
         applyActions(actions);
         appliedRef.current.add(msg.id);
       }
     }
-  }, [messages, applyActions]);
+  }, [activeAsset, applyActions, messages, updateAssetBackground]);
 
   return null;
 }
@@ -178,7 +186,7 @@ export function ThreadShell({
       key={chatId ?? "welcome"}
       persistenceKey={chatId ? `nanobot.chartStyles.${chatId}` : null}
     >
-      <VisualWorkspaceProvider>
+      <VisualWorkspaceProvider key={chatId ?? "welcome-workspace"} sessionId={chatId}>
         <ChartActionWatcher messages={messages} />
         <section className="relative flex min-h-0 flex-1 overflow-hidden">
           <div className="flex min-w-0 flex-1 flex-col">
@@ -236,7 +244,7 @@ export function ThreadShell({
               }
             />
           </div>
-          <VisualWorkspacePanel />
+          {chatId ? <VisualWorkspacePanel /> : null}
         </section>
       </VisualWorkspaceProvider>
     </ChartSelectionProvider>

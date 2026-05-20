@@ -75,6 +75,20 @@ export function ThreadViewport({
     return () => el.removeEventListener("scroll", onScroll);
   }, [updateBottomState]);
 
+  // Listen for workspace → chat navigation requests
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { messageId } = (e as CustomEvent<{ messageId: string }>).detail ?? {};
+      if (!messageId) return;
+      const el = document.querySelector(`[data-message-id="${messageId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    };
+    window.addEventListener("nanobot:navigateToMessage", handler);
+    return () => window.removeEventListener("nanobot:navigateToMessage", handler);
+  }, []);
+
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden">
       <div

@@ -17,8 +17,8 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { ChartElementChips } from "@/components/ChartElementChips";
-import { VisualAnchorChips } from "@/components/VisualAnchorChips";
 import { Button } from "@/components/ui/button";
+import { VisualAnchorChips } from "@/components/VisualAnchorChips";
 import {
   useAttachedImages,
   type AttachedImage,
@@ -68,7 +68,7 @@ interface DocumentAttachment {
 }
 
 interface ThreadComposerProps {
-  onSend: (content: string, images?: SendImage[], documents?: OutboundMedia[]) => void;
+  onSend: (content: string, images?: SendImage[], documents?: OutboundMedia[], displayContent?: string) => void;
   disabled?: boolean;
   placeholder?: string;
   modelLabel?: string | null;
@@ -100,7 +100,7 @@ export function ThreadComposer({
     clearSelection,
     applyActions,
   } = useChartSelection();
-  const { anchors, clearAnchors } = useVisualWorkspace();
+  const { anchors, activeAsset, clearAnchors } = useVisualWorkspace();
 
   const { images, enqueue, remove, clear, encoding, full } =
     useAttachedImages();
@@ -218,23 +218,46 @@ export function ThreadComposer({
   const submit = useCallback(() => {
     if (!canSend) return;
     const trimmed = value.trim();
-    // Prepend selected chart elements as structured context for the LLM
-    let enrichedContent = trimmed;
+
+    // Apply local color changes if the user mentions a color
     if (selectedElements.length > 0) {
-      // Apply local color changes if the user mentions a color
       const colorActions = detectColorChangeFromMessage(trimmed, selectedElements);
       if (colorActions.length > 0) {
         applyActions(colorActions);
       }
+    }
+
+    // Build structured context for the model (never shown to the user).
+    // This is prepended to the wire content but excluded from the chat bubble.
+    const contextBlocks: string[] = [];
+
+    // Active asset context (the user's edit target)
+    if (activeAsset) {
+      contextBlocks.push(
+        `[Active Edit Target]\n${JSON.stringify({
+          activeAssetId: activeAsset.id,
+          kind: activeAsset.kind,
+          title: activeAsset.title,
+          sourceMessageId: activeAsset.sourceMessageId,
+          url: activeAsset.url,
+          supportedImageActions: activeAsset.kind === "image"
+            ? [
+                { type: "update_background", patch: { color: "#DDF4FF", opacity: 1 } },
+              ]
+            : undefined,
+        })}`,
+      );
+    }
+
+    // Selected chart elements
+    if (selectedElements.length > 0) {
       const chartContext = selectedElements
-        .map(
-          (el) => {
-            const sourceRow = el.sourceRow
-              ? `, sourceRow: ${JSON.stringify(el.sourceRow)}`
-              : "";
-            return `[${el.label}] (elementId: ${el.elementId}, chartType: ${el.chartType}, series: ${el.series}, category: ${el.category}, value: ${el.value}${sourceRow})`;
-          },
-        )
+        .map((el) => {
+          const sourceRow = el.sourceRow
+            ? `, sourceRow: ${JSON.stringify(el.sourceRow)}`
+            : "";
+          return `[${el.label}] (elementId: ${el.elementId}, chartType: ${el.chartType}, series: ${el.series}, category: ${el.category}, value: ${el.value}${sourceRow})`;
+        })
         .join("\n");
       const styleContext = JSON.stringify({
         supportedStyleFields: [
@@ -252,8 +275,10 @@ export function ThreadComposer({
           { type: "style_by_ids", targetElementIds: ["<elementId>"], style: { visible: false } },
         ],
       });
-      enrichedContent = `[Selected Chart Elements]\n${chartContext}\n[Chart Element Styling]\n${styleContext}\n\n${trimmed}`;
+      contextBlocks.push(`[Selected Chart Elements]\n${chartContext}\n[Chart Element Styling]\n${styleContext}`);
     }
+
+    // Figure state summary
     if (selectionSets.length > 0 || annotations.length > 0 || Object.keys(figureOverrides).length > 0) {
       const figureContext = JSON.stringify({
         selectionSets,
@@ -276,8 +301,10 @@ export function ThreadComposer({
           "update_export_settings",
         ],
       });
-      enrichedContent = `[Interactive Figure State]\n${figureContext}\n\n${enrichedContent}`;
+      contextBlocks.push(`[Interactive Figure State]\n${figureContext}`);
     }
+
+    // Visual anchors
     if (anchors.length > 0) {
       const visualContext = anchors
         .map((anchor) => {
@@ -288,12 +315,14 @@ export function ThreadComposer({
           return `[${anchor.label}] (assetId: ${anchor.assetId}, assetTitle: ${anchor.assetTitle}, kind: ${anchor.kind}${coords})`;
         })
         .join("\n");
-      enrichedContent = `[Selected Visual Anchors]\n${visualContext}\n\n${enrichedContent}`;
+      contextBlocks.push(`[Selected Visual Anchors]\n${visualContext}`);
     }
-    // Share the same normalized ``data:`` URL with both the wire payload and
-    // the optimistic bubble preview: data URLs are self-contained (no blob
-    // lifetime, safe under React StrictMode double-mount) and keep the
-    // bubble in sync with whatever the backend actually sees.
+
+    // Wire content = structured context + user text. Chat bubble = user text only.
+    const enrichedContent = contextBlocks.length > 0
+      ? `${contextBlocks.join("\n\n")}\n\n${trimmed}`
+      : trimmed;
+
     const payload: SendImage[] | undefined =
       readyImages.length > 0
         ? readyImages.map((img) => ({
@@ -311,14 +340,13 @@ export function ThreadComposer({
             name: d.file.name,
           }))
         : undefined;
-    onSend(enrichedContent, payload, docPayload);
+
+    // Pass clean user text as displayContent for the chat bubble
+    onSend(enrichedContent, payload, docPayload, trimmed);
     setValue("");
     setInlineError(null);
-    // Clear chart selection after sending
     clearSelection();
     clearAnchors();
-    // Bubble owns the data URL copy; safe to revoke every staged blob
-    // preview here without affecting the rendered message.
     clear();
     setDocs([]);
     requestAnimationFrame(() => {
@@ -344,6 +372,7 @@ export function ThreadComposer({
     anchors,
     clearAnchors,
     applyActions,
+    activeAsset,
   ]);
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -506,6 +535,8 @@ export function ThreadComposer({
             ))}
           </div>
         ) : null}
+        <ChartElementChips className="px-3 pt-2" />
+        <VisualAnchorChips className="px-3 pt-2" />
         <textarea
           ref={textareaRef}
           value={value}
@@ -538,8 +569,6 @@ export function ThreadComposer({
             {inlineError}
           </div>
         ) : null}
-        <ChartElementChips />
-        <VisualAnchorChips />
         <div
           className={cn(
             "flex items-center justify-between gap-2",

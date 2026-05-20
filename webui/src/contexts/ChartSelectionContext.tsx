@@ -11,6 +11,13 @@ import type {
   SelectionSet,
 } from "@/lib/chart-types";
 
+export interface ActionResult {
+  type: string;
+  status: "applied" | "ignored" | "failed";
+  reason?: string;
+  at: number;
+}
+
 interface ChartSelectionContextValue {
   selectedElements: SelectedChartElement[];
   /** Toggle an element's selection state. */
@@ -28,6 +35,10 @@ interface ChartSelectionContextValue {
   selectFigureObject: (object: FigureObjectRef | null) => void;
   /** Apply one or more chart actions. */
   applyActions: (actions: ChartAction[]) => void;
+  /** Results from the most recent action application. */
+  lastActionResults: ActionResult[];
+  /** Dismiss action results. */
+  dismissActionResults: () => void;
   /** Reset all applied styles. */
   resetStyles: () => void;
 }
@@ -151,6 +162,9 @@ export function ChartSelectionProvider({
   const [annotations, setAnnotations] = useState<AnnotationSpec[]>(() => persisted.annotations);
   const [figureOverrides, setFigureOverrides] = useState<FigureInteractionOverrides>(() => persisted.figureOverrides);
   const [activeFigureObject, setActiveFigureObject] = useState<FigureObjectRef | null>(null);
+  const [lastActionResults, setLastActionResults] = useState<ActionResult[]>([]);
+
+  const dismissActionResults = useCallback(() => setLastActionResults([]), []);
 
   useEffect(() => {
     const next = readPersistedState(persistenceKey);
@@ -210,6 +224,9 @@ export function ChartSelectionProvider({
   }, []);
 
   const applyActions = useCallback((actions: ChartAction[]) => {
+    const results: ActionResult[] = [];
+    const now = Date.now();
+
     setElementStyles((prev) => {
       const next = new Map(prev);
       for (const action of actions) {
@@ -315,13 +332,41 @@ export function ChartSelectionProvider({
         } else if (action.type === "update_layout") {
           next = { ...next, layout: { ...(next.layout ?? {}), ...action.patch } };
         } else if (action.type === "update_background") {
-          next = { ...next, background: { ...(next.background ?? {}), ...action.patch } };
+          next = {
+            ...next,
+            layout: {
+              ...(next.layout ?? {}),
+              background: { ...(next.layout?.background ?? {}), ...(next.background ?? {}), ...action.patch },
+            },
+            background: { ...(next.background ?? {}), ...action.patch },
+          };
         } else if (action.type === "update_export_settings") {
           next = { ...next, exportSettings: { ...(next.exportSettings ?? {}), ...action.patch } };
         }
       }
       return next;
     });
+
+    // Record results for each action applied
+    for (const action of actions) {
+      const actionType = action.type;
+      const hasTarget =
+        (actionType === "style_by_ids" || actionType === "update_element_style") ? (action.targetElementIds?.length ?? 0) > 0
+        : actionType === "add_annotation" ? true
+        : actionType === "update_annotation" ? !!action.annotationId
+        : actionType === "delete_annotation" ? !!action.annotationId
+        : true;
+
+      if (hasTarget) {
+        results.push({ type: actionType, status: "applied", at: now });
+      } else {
+        results.push({ type: actionType, status: "ignored", reason: "No target element specified", at: now });
+      }
+    }
+
+    if (results.length > 0) {
+      setLastActionResults((prev) => [...prev, ...results].slice(-20));
+    }
   }, []);
 
   const resetStyles = useCallback(() => {
@@ -345,6 +390,8 @@ export function ChartSelectionProvider({
       activeFigureObject,
       selectFigureObject,
       applyActions,
+      lastActionResults,
+      dismissActionResults,
       resetStyles,
     }),
     [
@@ -359,6 +406,8 @@ export function ChartSelectionProvider({
       activeFigureObject,
       selectFigureObject,
       applyActions,
+      lastActionResults,
+      dismissActionResults,
       resetStyles,
     ],
   );
@@ -382,6 +431,8 @@ export function useChartSelection(): ChartSelectionContextValue {
       activeFigureObject: null,
       selectFigureObject: () => {},
       applyActions: () => {},
+      lastActionResults: [],
+      dismissActionResults: () => {},
       resetStyles: () => {},
     };
   }

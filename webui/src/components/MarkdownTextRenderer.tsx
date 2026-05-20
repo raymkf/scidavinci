@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
@@ -5,7 +6,7 @@ import remarkMath from "remark-math";
 
 import { CodeBlock } from "@/components/CodeBlock";
 import { InteractiveChart, parseChartCodeBlock } from "@/components/InteractiveChart";
-import { VisualAssetImage } from "@/components/VisualAssetImage";
+import { useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
 import remarkTableToChart from "@/lib/remark-table-to-chart";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +24,41 @@ function stableHash(value: string): string {
     hash = ((hash << 5) + hash) ^ value.charCodeAt(i);
   }
   return (hash >>> 0).toString(36);
+}
+
+function WorkspaceImageReference({
+  assetId,
+  title,
+  sourceMessageId,
+  src,
+}: {
+  assetId: string;
+  title: string;
+  sourceMessageId?: string;
+  src: string;
+}) {
+  const { registerAsset } = useVisualWorkspace();
+
+  useEffect(() => {
+    if (!src) return;
+    registerAsset({
+      id: assetId,
+      kind: "image",
+      title,
+      sourceMessageId,
+      createdAt: Date.now(),
+      url: src,
+    });
+  }, [assetId, registerAsset, sourceMessageId, src, title]);
+
+  return (
+    <img
+      src={src}
+      alt={title}
+      className="my-3 max-h-[26rem] rounded-md border border-border/60 object-contain"
+      loading="lazy"
+    />
+  );
 }
 
 /**
@@ -110,22 +146,15 @@ export default function MarkdownTextRenderer({
               </a>
             );
           },
-          img({ src, alt, ...props }) {
+          img({ src, alt }) {
             const source = typeof src === "string" ? src : "";
             const title = alt || source.split("/").pop() || "Generated image";
             return (
-              <VisualAssetImage
+              <WorkspaceImageReference
                 assetId={`${sourceId}-image-${stableHash(source)}`}
                 title={title}
                 sourceMessageId={sourceId}
                 src={source}
-                alt={alt ?? ""}
-                loading="lazy"
-                decoding="async"
-                draggable={false}
-                registerAsVisual={!!source}
-                className="my-3 max-h-[34rem] rounded-md border border-border/60 object-contain"
-                {...props}
               />
             );
           },

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, type CSSProperties } from "react";
 
 import {
   BarChart,
@@ -35,7 +35,7 @@ import {
 } from "@/lib/chart-element-styles";
 import { applyFigureInteractionOverrides, normalizeChartConfig, normalizeFigureModel } from "@/lib/chart-normalize";
 import { JOURNAL_CHART_STYLE, journalColor } from "@/lib/chart-style";
-import type { ChartConfig, ChartElementMetadata, FigureObjectRef } from "@/lib/chart-types";
+import type { ChartConfig, ChartElementMetadata, FigureObjectRef, FillSpec } from "@/lib/chart-types";
 import { cn } from "@/lib/utils";
 
 interface InteractiveChartProps {
@@ -101,6 +101,48 @@ function aspectNumber(value?: string | number): number {
   return 4 / 3;
 }
 
+function backgroundStyle(background?: FillSpec): CSSProperties | undefined {
+  if (!background) return undefined;
+  if (background.transparent) return { backgroundColor: "transparent" };
+  const opacity = background.opacity ?? 1;
+  const color = background.color ?? JOURNAL_CHART_STYLE.background;
+  const base: CSSProperties = {
+    backgroundColor: opacity < 1 ? hexToRgba(color, opacity) : color,
+  };
+  const pattern = background.pattern ?? "none";
+  if (pattern === "none") return base;
+  const patternColor = hexToRgba(background.patternColor ?? "#E5E7EB", background.patternOpacity ?? 0.8);
+  const size = background.patternSize ?? 20;
+  if (pattern === "lines") {
+    return {
+      ...base,
+      backgroundImage: `linear-gradient(to bottom, ${patternColor} 1px, transparent 1px)`,
+      backgroundSize: `${size}px ${size}px`,
+    };
+  }
+  return {
+    ...base,
+    backgroundImage: [
+      `linear-gradient(to right, ${patternColor} 1px, transparent 1px)`,
+      `linear-gradient(to bottom, ${patternColor} 1px, transparent 1px)`,
+    ].join(", "),
+    backgroundSize: `${size}px ${size}px`,
+  };
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const normalized = hex.replace("#", "");
+  const expanded = normalized.length === 3
+    ? normalized.split("").map((char) => `${char}${char}`).join("")
+    : normalized;
+  const value = Number.parseInt(expanded, 16);
+  if (!Number.isFinite(value)) return `rgba(229, 231, 235, ${alpha})`;
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 interface BarShapeProps {
   x?: number;
   y?: number;
@@ -132,7 +174,7 @@ export function InteractiveChart({
     activeFigureObject,
     selectFigureObject,
   } = useChartSelection();
-  const { registerAsset, getAssetAspectRatio } = useVisualWorkspace();
+  const { registerAsset, getAssetAspectRatio, openAsset } = useVisualWorkspace();
   const configKey = useMemo(() => JSON.stringify(config), [config]);
   const figure = useMemo(
     () => applyFigureInteractionOverrides(
@@ -160,6 +202,16 @@ export function InteractiveChart({
       chartConfig: parsedConfig,
     });
   }, [chartId, configKey, registerAsset, registerInWorkspace, sourceMessageId]);
+
+  const handleElementToggle = useCallback(
+    (meta: ChartElementMetadata) => {
+      toggleElement(meta);
+      if (registerInWorkspace) {
+        openAsset(chartId);
+      }
+    },
+    [toggleElement, registerInWorkspace, openAsset, chartId],
+  );
 
   const isSelected = useCallback(
     (elementId: string) => selectedElements.some((e) => e.elementId === elementId),
@@ -312,7 +364,7 @@ export function InteractiveChart({
                   tabIndex={0}
                   onClick={(event) => {
                     event.stopPropagation();
-                    toggleElement(meta);
+                    handleElementToggle(meta);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -343,7 +395,7 @@ export function InteractiveChart({
                     typeof val === "number" ? val : Number(val) || 0,
                     payload,
                   );
-                  toggleElement(meta);
+                  handleElementToggle(meta);
                 }}
               >
                 {data.map((entry, i) => {
@@ -421,8 +473,8 @@ export function InteractiveChart({
                   const payload = pointData as unknown as Record<string, unknown>;
                   const value = payload[field] as number ?? 0;
                   const cat = String(payload[config.xField ?? "name"] ?? "");
-                  const meta = buildMetadata(config, chartId, field, cat, Number(value));
-                  toggleElement(meta);
+                  const meta = buildMetadata(config, chartId, field, cat, Number(value), payload);
+                  handleElementToggle(meta);
                 }}
               >
                 {errField ? (
@@ -461,7 +513,7 @@ export function InteractiveChart({
               const name = String(payload[nameKey] ?? "");
               const value = Number(payload[valueKey] ?? 0);
               const meta = buildMetadata(config, chartId, name, name, value);
-              toggleElement(meta);
+              handleElementToggle(meta);
             }}
           >
             {data.map((entry, i) => {
@@ -522,8 +574,8 @@ export function InteractiveChart({
                   const payload = pointData as unknown as Record<string, unknown>;
                   const value = payload[field] as number ?? 0;
                   const cat = String(payload[config.xField ?? "name"] ?? "");
-                  const meta = buildMetadata(config, chartId, field, cat, Number(value));
-                  toggleElement(meta);
+                  const meta = buildMetadata(config, chartId, field, cat, Number(value), payload);
+                  handleElementToggle(meta);
                 }}
               />
             );
@@ -542,9 +594,9 @@ export function InteractiveChart({
       case "area":
         return renderAreaChart();
       case "volcano":
-        return <VolcanoCanvas config={config} chartId={chartId} />;
+        return <VolcanoCanvas config={config} chartId={chartId} onElementToggle={handleElementToggle} />;
       case "box":
-        return <BoxPlotSvg config={config} chartId={chartId} aspect={aspect} />;
+        return <BoxPlotSvg config={config} chartId={chartId} aspect={aspect} onElementToggle={handleElementToggle} />;
       case "bar":
       default:
         return renderBarChart();
@@ -554,20 +606,17 @@ export function InteractiveChart({
   const captionText = figure.caption?.visible === false
     ? undefined
     : figure.caption?.text ?? config.caption ?? config.description;
-  const backgroundColor = figure.layout?.background?.transparent
-    ? "transparent"
-    : figure.layout?.background?.color;
+  const bg = figure.layout?.background;
+  const canvasBackground = backgroundStyle(bg);
 
   return (
     <div
       className={cn(
-        "my-4 rounded-md border border-border/60 bg-card p-4",
+        "my-4 rounded-md border border-border/60 p-4",
+        canvasBackground ? "" : "bg-card",
         className,
       )}
-      style={backgroundColor ? {
-        backgroundColor,
-        opacity: figure.layout?.background?.opacity,
-      } : undefined}
+      style={canvasBackground}
     >
       {titleText ? (
         <h4
@@ -583,7 +632,7 @@ export function InteractiveChart({
           {titleText}
         </h4>
       ) : null}
-      <div className="relative">
+      <div className="relative rounded-sm">
         {chartContent}
         <FigureHitZones
           activeObject={activeFigureObject}
@@ -690,11 +739,11 @@ function FigureHitZones({
   );
 }
 
-function VolcanoCanvas({ config, chartId }: { config: ChartConfig; chartId: string }) {
+function VolcanoCanvas({ config, chartId, onElementToggle }: { config: ChartConfig; chartId: string; onElementToggle: (meta: ChartElementMetadata) => void }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pointsRef = useRef<Array<{ x: number; y: number; r: number; meta: ChartElementMetadata }>>([]);
-  const { toggleElement, selectedElements, elementStyles } = useChartSelection();
+  const { selectedElements, elementStyles } = useChartSelection();
   const aspect = aspectNumber(config.aspectRatio ?? "4:3");
   const xField = config.xValueField ?? config.xField ?? "log2FoldChange";
   const yField = config.yValueField ?? config.yField ?? "negLog10P";
@@ -824,7 +873,7 @@ function VolcanoCanvas({ config, chartId }: { config: ChartConfig; chartId: stri
     const observer = new ResizeObserver(draw);
     observer.observe(wrap);
     return () => observer.disconnect();
-  }, [aspect, chartId, config, elementStyles, groupField, labelField, pField, selectedElements, toggleElement, xField, yField]);
+  }, [aspect, chartId, config, elementStyles, groupField, labelField, pField, selectedElements, xField, yField]);
 
   return (
     <div ref={wrapRef} className="w-full" style={{ aspectRatio: String(aspect) }}>
@@ -840,15 +889,17 @@ function VolcanoCanvas({ config, chartId }: { config: ChartConfig; chartId: stri
             const d = Math.hypot(point.x - x, point.y - y);
             if (d <= point.r && (!best || d < best.d)) best = { d, meta: point.meta };
           }
-          if (best) toggleElement(best.meta);
+          if (best) {
+            onElementToggle(best.meta);
+          }
         }}
       />
     </div>
   );
 }
 
-function BoxPlotSvg({ config, chartId, aspect }: { config: ChartConfig; chartId: string; aspect: number }) {
-  const { toggleElement, selectedElements, elementStyles } = useChartSelection();
+function BoxPlotSvg({ config, chartId, aspect, onElementToggle }: { config: ChartConfig; chartId: string; aspect: number; onElementToggle: (meta: ChartElementMetadata) => void }) {
+  const { selectedElements, elementStyles } = useChartSelection();
   const data = config.data as Record<string, unknown>[];
   const xKey = config.xField ?? "group";
   const minField = config.minField ?? "min";
@@ -868,7 +919,6 @@ function BoxPlotSvg({ config, chartId, aspect }: { config: ChartConfig; chartId:
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="block w-full" style={{ aspectRatio: String(aspect) }}>
-      <rect width={width} height={height} fill={JOURNAL_CHART_STYLE.background} />
       {[0, 1, 2, 3, 4].map((i) => {
         const y = plot.y + (plot.h * i) / 4;
         return <line key={i} x1={plot.x} x2={plot.x + plot.w} y1={y} y2={y} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" />;
@@ -897,7 +947,7 @@ function BoxPlotSvg({ config, chartId, aspect }: { config: ChartConfig; chartId:
           label: `${category}: median ${row[medianField] ?? ""}`,
         };
         return (
-          <g key={elementId} role="button" tabIndex={0} className="cursor-pointer" onClick={() => toggleElement(meta)}>
+          <g key={elementId} role="button" tabIndex={0} className="cursor-pointer" onClick={() => onElementToggle(meta)}>
             <line x1={cx} x2={cx} y1={yMax} y2={yMin} stroke={JOURNAL_CHART_STYLE.axisColor} strokeWidth={1.5} />
             <line x1={cx - boxW * 0.28} x2={cx + boxW * 0.28} y1={yMax} y2={yMax} stroke={JOURNAL_CHART_STYLE.axisColor} strokeWidth={1.5} />
             <line x1={cx - boxW * 0.28} x2={cx + boxW * 0.28} y1={yMin} y2={yMin} stroke={JOURNAL_CHART_STYLE.axisColor} strokeWidth={1.5} />

@@ -78,6 +78,11 @@ export interface FillSpec {
   color?: string;
   opacity?: number;
   transparent?: boolean;
+  /** Background pattern overlay. */
+  pattern?: "none" | "grid" | "lines";
+  patternColor?: string;
+  patternOpacity?: number;
+  patternSize?: number;
 }
 
 export interface TextBlockSpec {
@@ -295,6 +300,16 @@ export type ChartAction =
   | {
       type: "update_export_settings";
       patch: ExportSettings;
+    }
+  | {
+      type: "create_collage";
+      imageAssetIds: string[];
+      layout?: CollageLayout;
+    }
+  | {
+      type: "add_to_collage";
+      assetId: string;
+      imageAssetId: string;
     };
 
 export interface ChartErrorBar {
@@ -382,7 +397,7 @@ export interface ChartConfig {
   description?: string;
 }
 
-export type VisualAssetKind = "image" | "chart";
+export type VisualAssetKind = "image" | "chart" | "collage";
 
 export interface VisualAsset {
   id: string;
@@ -392,7 +407,9 @@ export interface VisualAsset {
   sourceMessageId?: string;
   createdAt: number;
   url?: string;
+  background?: FillSpec;
   chartConfig?: ChartConfig;
+  collage?: CollageSpec;
 }
 
 export interface VisualAnchor {
@@ -403,4 +420,26 @@ export interface VisualAnchor {
   xPct?: number;
   yPct?: number;
   label: string;
+}
+
+export type CollageLayout = "freeform" | "1x2" | "2x1" | "2x2" | "2x3" | "3x2";
+
+export interface CollageItem {
+  assetId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  fit: "contain" | "cover";
+  zIndex?: number;
+}
+
+export interface CollageSpec {
+  items: CollageItem[];
+  background?: FillSpec;
+  layout: CollageLayout;
+  canvasWidth: number;
+  canvasHeight: number;
+  gap?: number;
 }

@@ -40,7 +40,7 @@ export function useNanobotStream(
 ): {
   messages: UIMessage[];
   isStreaming: boolean;
-  send: (content: string, images?: SendImage[], documents?: OutboundMedia[]) => void;
+  send: (content: string, images?: SendImage[], documents?: OutboundMedia[], displayContent?: string) => void;
   setMessages: React.Dispatch<React.SetStateAction<UIMessage[]>>;
   /** Latest transport-level fault raised since the last ``dismissStreamError``.
    * ``null`` when there is nothing to show. */
@@ -187,7 +187,7 @@ export function useNanobotStream(
   }, [chatId, client]);
 
   const send = useCallback(
-    (content: string, images?: SendImage[], documents?: OutboundMedia[]) => {
+    (content: string, images?: SendImage[], documents?: OutboundMedia[], displayContent?: string) => {
       if (!chatId) return;
       const hasImages = !!images && images.length > 0;
       const hasDocuments = !!documents && documents.length > 0;
@@ -195,13 +195,16 @@ export function useNanobotStream(
       // still see the file blocks via ``media`` paths.
       if (!hasImages && !hasDocuments && !content.trim()) return;
 
+      // Use displayContent for the chat bubble (clean user text), wire content
+      // for the model (may include structured context like [Selected Chart Elements]).
+      const bubbleText = displayContent ?? content;
       const previews = hasImages ? images!.map((i) => i.preview) : undefined;
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: "user",
-          content,
+          content: bubbleText,
           createdAt: Date.now(),
           ...(previews ? { images: previews } : {}),
         },
