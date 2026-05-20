@@ -1,5 +1,12 @@
 import { journalColor } from "@/lib/chart-style";
-import type { ChartConfig, ChartElementStyle } from "@/lib/chart-types";
+import type {
+  AnnotationSpec,
+  ChartConfig,
+  ChartElementStyle,
+  FigureInteractionOverrides,
+  FigureModel,
+  MarkSpec,
+} from "@/lib/chart-types";
 
 function numericValue(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -62,5 +69,214 @@ function normalizeSparseOneBarSeries(config: ChartConfig): ChartConfig {
 }
 
 export function normalizeChartConfig(config: ChartConfig): ChartConfig {
-  return normalizeSparseOneBarSeries(config);
+  const normalized = normalizeSparseOneBarSeries(config);
+  return {
+    ...normalized,
+    figure: normalizeFigureModel(normalized),
+  };
+}
+
+function chartFields(config: ChartConfig): string[] {
+  if (config.type === "pie") return [config.valueField ?? "value"];
+  if (config.type === "volcano") {
+    return [
+      config.xValueField ?? config.xField ?? "log2FoldChange",
+      config.yValueField ?? config.yField ?? "negLog10P",
+    ];
+  }
+  if (config.type === "box") {
+    return [config.medianField ?? "median"];
+  }
+  return config.yFields ?? [config.yField].filter(Boolean) as string[];
+}
+
+function inferMarkType(config: ChartConfig): MarkSpec["type"] {
+  switch (config.type) {
+    case "pie":
+      return "slice";
+    case "line":
+      return "line";
+    case "area":
+      return "area";
+    case "volcano":
+      return "point";
+    case "box":
+      return "box";
+    case "bar":
+    default:
+      return "bar";
+  }
+}
+
+export function normalizeFigureModel(config: ChartConfig): FigureModel {
+  const existing = config.figure;
+  const markType = inferMarkType(config);
+  const fields = chartFields(config);
+  const marks: MarkSpec[] = existing?.marks?.length
+    ? existing.marks
+    : fields.map((field) => ({
+        id: `mark.${markType}.${field}`.replace(/[^a-zA-Z0-9_.-]/g, "_"),
+        type: markType,
+        series: field,
+        encoding: {
+          x: config.xField ?? config.nameField ?? "name",
+          y: field,
+        },
+      }));
+
+  return {
+    ...existing,
+    schemaVersion: 2,
+    type: config.type,
+    data: existing?.datasetRef ? existing.data : config.data,
+    datasetRef: existing?.datasetRef,
+    layout: {
+      aspectRatio: config.aspectRatio ?? existing?.layout?.aspectRatio,
+      plotArea: existing?.layout?.plotArea ?? "auto",
+      background: {
+        color: "#ffffff",
+        ...(existing?.layout?.background ?? {}),
+      },
+      margin: existing?.layout?.margin,
+    },
+    title: {
+      id: "title",
+      text: config.title,
+      visible: Boolean(config.title),
+      position: "top",
+      ...(existing?.title ?? {}),
+    },
+    caption: {
+      id: "caption",
+      text: config.caption ?? config.description,
+      visible: Boolean(config.caption || config.description),
+      position: "bottom",
+      ...(existing?.caption ?? {}),
+    },
+    axes: {
+      x: {
+        id: "axis.x",
+        channel: "x",
+        title: config.xLabel ?? config.xField,
+        visible: config.type !== "pie",
+        ...(existing?.axes?.x ?? {}),
+      },
+      y: {
+        id: "axis.y",
+        channel: "y",
+        title: config.yLabel ?? (config.unit ? `Value (${config.unit})` : undefined),
+        visible: config.type !== "pie",
+        ...(existing?.axes?.y ?? {}),
+      },
+    },
+    scales: {
+      x: {
+        id: "scale.x",
+        channel: "x",
+        type: config.type === "bar" || config.type === "box" ? "band" : "linear",
+        ...(existing?.scales?.x ?? {}),
+      },
+      y: {
+        id: "scale.y",
+        channel: "y",
+        type: "linear",
+        zero: config.type === "bar" || config.type === "area",
+        nice: true,
+        ...(existing?.scales?.y ?? {}),
+      },
+      color: {
+        id: "scale.color",
+        channel: "color",
+        type: "ordinal",
+        range: config.colors,
+        ...(existing?.scales?.color ?? {}),
+      },
+      size: existing?.scales?.size,
+    },
+    grid: {
+      id: "grid",
+      x: false,
+      y: config.type !== "pie",
+      visible: config.type !== "pie",
+      ...(existing?.grid ?? {}),
+    },
+    legend: {
+      id: "legend",
+      visible: config.type !== "volcano",
+      position: config.type === "pie" ? "right" : "bottom",
+      ...(existing?.legend ?? {}),
+    },
+    marks,
+    annotations: existing?.annotations ?? [],
+    selections: existing?.selections ?? [],
+    styleOverrides: {
+      ...(config.elementStyles ?? {}),
+      ...(existing?.styleOverrides ?? {}),
+    },
+    exportSettings: existing?.exportSettings ?? {
+      format: "png",
+      width: 1600,
+      includeCaption: true,
+    },
+  };
+}
+
+export function applyFigureInteractionOverrides(
+  figure: FigureModel,
+  overrides: FigureInteractionOverrides,
+  annotations: AnnotationSpec[] = [],
+): FigureModel {
+  return {
+    ...figure,
+    layout: {
+      ...(figure.layout ?? {}),
+      ...(overrides.layout ?? {}),
+      background: {
+        ...(figure.layout?.background ?? {}),
+        ...(overrides.layout?.background ?? {}),
+        ...(overrides.background ?? {}),
+      },
+    },
+    axes: {
+      ...figure.axes,
+      x: figure.axes?.x || overrides.axes?.x
+        ? { id: "axis.x", channel: "x", ...(figure.axes?.x ?? {}), ...(overrides.axes?.x ?? {}) }
+        : undefined,
+      y: figure.axes?.y || overrides.axes?.y
+        ? { id: "axis.y", channel: "y", ...(figure.axes?.y ?? {}), ...(overrides.axes?.y ?? {}) }
+        : undefined,
+    },
+    scales: {
+      ...figure.scales,
+      x: figure.scales?.x || overrides.scales?.x
+        ? { id: "scale.x", channel: "x", ...(figure.scales?.x ?? {}), ...(overrides.scales?.x ?? {}) }
+        : undefined,
+      y: figure.scales?.y || overrides.scales?.y
+        ? { id: "scale.y", channel: "y", ...(figure.scales?.y ?? {}), ...(overrides.scales?.y ?? {}) }
+        : undefined,
+      color: figure.scales?.color || overrides.scales?.color
+        ? { id: "scale.color", channel: "color", ...(figure.scales?.color ?? {}), ...(overrides.scales?.color ?? {}) }
+        : undefined,
+      size: figure.scales?.size || overrides.scales?.size
+        ? { id: "scale.size", channel: "size", ...(figure.scales?.size ?? {}), ...(overrides.scales?.size ?? {}) }
+        : undefined,
+    },
+    legend: figure.legend || overrides.legend
+      ? { id: "legend", ...(figure.legend ?? {}), ...(overrides.legend ?? {}) }
+      : undefined,
+    grid: figure.grid || overrides.grid
+      ? { id: "grid", ...(figure.grid ?? {}), ...(overrides.grid ?? {}) }
+      : undefined,
+    title: figure.title || overrides.title
+      ? { id: "title", ...(figure.title ?? {}), ...(overrides.title ?? {}) }
+      : undefined,
+    caption: figure.caption || overrides.caption
+      ? { id: "caption", ...(figure.caption ?? {}), ...(overrides.caption ?? {}) }
+      : undefined,
+    annotations: [...(figure.annotations ?? []), ...annotations],
+    exportSettings: {
+      ...(figure.exportSettings ?? {}),
+      ...(overrides.exportSettings ?? {}),
+    },
+  };
 }

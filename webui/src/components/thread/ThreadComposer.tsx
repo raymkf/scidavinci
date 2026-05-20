@@ -91,7 +91,15 @@ export function ThreadComposer({
   const isHero = variant === "hero";
   const resolvedPlaceholder =
     placeholder ?? t("thread.composer.placeholderThread");
-  const { selectedElements, clearSelection, applyActions } = useChartSelection();
+  const {
+    selectedElements,
+    selectionSets,
+    annotations,
+    figureOverrides,
+    activeFigureObject,
+    clearSelection,
+    applyActions,
+  } = useChartSelection();
   const { anchors, clearAnchors } = useVisualWorkspace();
 
   const { images, enqueue, remove, clear, encoding, full } =
@@ -228,7 +236,47 @@ export function ThreadComposer({
           },
         )
         .join("\n");
-      enrichedContent = `[Selected Chart Elements]\n${chartContext}\n\n${trimmed}`;
+      const styleContext = JSON.stringify({
+        supportedStyleFields: [
+          "color",
+          "stroke",
+          "strokeWidth",
+          "fillOpacity",
+          "opacity",
+          "pointSize",
+          "visible",
+          "barWidthScale",
+        ],
+        examples: [
+          { type: "style_by_ids", targetElementIds: ["<elementId>"], style: { barWidthScale: 0.5 } },
+          { type: "style_by_ids", targetElementIds: ["<elementId>"], style: { visible: false } },
+        ],
+      });
+      enrichedContent = `[Selected Chart Elements]\n${chartContext}\n[Chart Element Styling]\n${styleContext}\n\n${trimmed}`;
+    }
+    if (selectionSets.length > 0 || annotations.length > 0 || Object.keys(figureOverrides).length > 0) {
+      const figureContext = JSON.stringify({
+        selectionSets,
+        annotations,
+        figureOverrides,
+        activeFigureObject,
+        supportedChartActions: [
+          "style_by_ids",
+          "update_axis",
+          "update_scale",
+          "update_legend",
+          "update_grid",
+          "update_text_block",
+          "update_layout",
+          "update_background",
+          "add_annotation",
+          "update_annotation",
+          "delete_annotation",
+          "create_selection_set",
+          "update_export_settings",
+        ],
+      });
+      enrichedContent = `[Interactive Figure State]\n${figureContext}\n\n${enrichedContent}`;
     }
     if (anchors.length > 0) {
       const visualContext = anchors
@@ -280,7 +328,23 @@ export function ThreadComposer({
         el.focus();
       }
     });
-  }, [canSend, clear, onSend, readyImages, readyDocs, value, selectedElements, clearSelection, anchors, clearAnchors, applyActions]);
+  }, [
+    canSend,
+    clear,
+    onSend,
+    readyImages,
+    readyDocs,
+    value,
+    selectedElements,
+    selectionSets,
+    annotations,
+    figureOverrides,
+    activeFigureObject,
+    clearSelection,
+    anchors,
+    clearAnchors,
+    applyActions,
+  ]);
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {

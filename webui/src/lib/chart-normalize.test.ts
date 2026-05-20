@@ -37,6 +37,43 @@ describe("normalizeChartConfig", () => {
       ],
     };
 
-    expect(normalizeChartConfig(config)).toBe(config);
+    const normalized = normalizeChartConfig(config);
+
+    expect(normalized.yFields).toBe(config.yFields);
+    expect(normalized.data).toBe(config.data);
+    expect(normalized.figure?.type).toBe("bar");
+  });
+
+  it("adds a structured figure model while preserving legacy chart fields", () => {
+    const config: ChartConfig = {
+      type: "bar",
+      title: "Expression",
+      caption: "Mean expression by group",
+      aspectRatio: "16:9",
+      xField: "group",
+      yField: "value",
+      xLabel: "Group",
+      yLabel: "Expression",
+      colors: ["#0072B2"],
+      data: [
+        { group: "A", value: 1 },
+        { group: "B", value: 2 },
+      ],
+      elementStyles: {
+        A: { color: "#D55E00" },
+      },
+    };
+
+    const normalized = normalizeChartConfig(config);
+
+    expect(normalized.figure?.schemaVersion).toBe(2);
+    expect(normalized.figure?.layout?.aspectRatio).toBe("16:9");
+    expect(normalized.figure?.title?.text).toBe("Expression");
+    expect(normalized.figure?.caption?.text).toBe("Mean expression by group");
+    expect(normalized.figure?.axes?.x?.title).toBe("Group");
+    expect(normalized.figure?.axes?.y?.title).toBe("Expression");
+    expect(normalized.figure?.scales?.color?.range).toEqual(["#0072B2"]);
+    expect(normalized.figure?.marks?.[0]).toMatchObject({ type: "bar", series: "value" });
+    expect(normalized.figure?.styleOverrides?.A?.color).toBe("#D55E00");
   });
 });

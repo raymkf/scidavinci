@@ -1,4 +1,15 @@
-import { Download, ImageIcon, MousePointer2, X } from "lucide-react";
+import {
+  Download,
+  Grid3X3,
+  ImageIcon,
+  Layers3,
+  MessageSquarePlus,
+  MousePointer2,
+  Palette,
+  RotateCcw,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import {
   Area,
@@ -20,9 +31,24 @@ import { InteractiveChart } from "@/components/InteractiveChart";
 import { Button } from "@/components/ui/button";
 import { useChartSelection } from "@/contexts/ChartSelectionContext";
 import { useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
-import { chartElementId, resolveElementColor } from "@/lib/chart-element-styles";
+import {
+  chartElementId,
+  resolveElementBarWidthScale,
+  resolveElementColor,
+  resolveElementFillOpacity,
+  resolveElementVisible,
+} from "@/lib/chart-element-styles";
+import { applyFigureInteractionOverrides, normalizeFigureModel } from "@/lib/chart-normalize";
 import { JOURNAL_CHART_STYLE, JOURNAL_COLORS, journalColor } from "@/lib/chart-style";
-import type { ChartConfig, VisualAnchor } from "@/lib/chart-types";
+import type {
+  ChartAction,
+  ChartConfig,
+  ChartElementStyle,
+  FigureModel,
+  FigureObjectRef,
+  SelectedChartElement,
+  VisualAnchor,
+} from "@/lib/chart-types";
 import { cn } from "@/lib/utils";
 
 export function VisualWorkspacePanel() {
@@ -39,7 +65,15 @@ export function VisualWorkspacePanel() {
     getAssetAspectRatio,
     addImageAnchor,
   } = useVisualWorkspace();
-  const { elementStyles } = useChartSelection();
+  const {
+    selectedElements,
+    elementStyles,
+    annotations,
+    figureOverrides,
+    activeFigureObject,
+    selectFigureObject,
+    applyActions,
+  } = useChartSelection();
 
   const activeAnchors = useMemo(
     () => anchors.filter((item) => item.assetId === activeAsset?.id),
@@ -70,6 +104,11 @@ export function VisualWorkspacePanel() {
           activeAsset.chartConfig,
           elementStyles,
           filename,
+          applyFigureInteractionOverrides(
+            activeAsset.chartConfig.figure ?? normalizeFigureModel(activeAsset.chartConfig),
+            figureOverrides,
+            annotations,
+          ),
         );
         return;
       }
@@ -210,6 +249,35 @@ export function VisualWorkspacePanel() {
         </p>
       </div>
 
+      <ElementInspector
+        selectedElements={selectedElements}
+        elementStyles={elementStyles}
+        onApply={(style) => {
+          applyActions([
+            {
+              type: "update_element_style",
+              targetElementIds: selectedElements.map((item) => item.elementId),
+              style,
+            },
+          ]);
+        }}
+      />
+
+      {activeAsset.kind === "chart" && activeAsset.chartConfig ? (
+        <FigureInspector
+          config={activeAsset.chartConfig}
+          selectedElements={selectedElements}
+          activeObject={activeFigureObject}
+          onSelectObject={selectFigureObject}
+          figure={applyFigureInteractionOverrides(
+            activeAsset.chartConfig.figure ?? normalizeFigureModel(activeAsset.chartConfig),
+            figureOverrides,
+            annotations,
+          )}
+          onAction={(action) => applyActions([action])}
+        />
+      ) : null}
+
       <div className="min-h-0 flex-1 overflow-y-auto p-3 scrollbar-thin">
         <div className="grid grid-cols-2 gap-2.5">
           {assets.map((asset) => (
@@ -256,6 +324,520 @@ export function VisualWorkspacePanel() {
   );
 }
 
+function ElementInspector({
+  selectedElements,
+  elementStyles,
+  onApply,
+}: {
+  selectedElements: SelectedChartElement[];
+  elementStyles: Map<string, ChartElementStyle>;
+  onApply: (style: ChartElementStyle) => void;
+}) {
+  if (selectedElements.length === 0) return null;
+
+  const style = mergedSelectedStyle(selectedElements, elementStyles);
+  const color = style.color ?? "#0072B2";
+  const stroke = style.stroke ?? JOURNAL_CHART_STYLE.selectedStroke;
+  const strokeWidth = style.strokeWidth ?? 2;
+  const fillOpacity = style.fillOpacity ?? 1;
+  const opacity = style.opacity ?? 1;
+  const pointSize = style.pointSize ?? 4;
+  const barWidthScale = style.barWidthScale ?? 1;
+  const hasBarSelection = selectedElements.some((element) => element.chartType === "bar");
+
+  return (
+    <div className="border-b border-border/70 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Palette className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+          <p className="truncate text-xs font-semibold text-foreground/90">
+            元素属性
+          </p>
+        </div>
+        <span className="text-[11px] text-muted-foreground">
+          {selectedElements.length} selected
+        </span>
+      </div>
+
+      <div className="mb-2 truncate text-[11px] text-muted-foreground">
+        {selectedElements[0].label}
+        {selectedElements.length > 1 ? ` +${selectedElements.length - 1}` : ""}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+          填充
+          <input
+            type="color"
+            value={color}
+            onChange={(event) => onApply({ color: event.target.value })}
+            className="h-8 w-full rounded border border-border bg-background p-1"
+            aria-label="Fill color"
+          />
+        </label>
+        <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+          描边
+          <input
+            type="color"
+            value={stroke}
+            onChange={(event) => onApply({ stroke: event.target.value })}
+            className="h-8 w-full rounded border border-border bg-background p-1"
+            aria-label="Stroke color"
+          />
+        </label>
+        <NumberControl
+          label="描边宽度"
+          value={strokeWidth}
+          min={0}
+          max={12}
+          step={0.5}
+          onChange={(value) => onApply({ strokeWidth: value })}
+        />
+        <NumberControl
+          label="点大小"
+          value={pointSize}
+          min={1}
+          max={18}
+          step={0.5}
+          onChange={(value) => onApply({ pointSize: value })}
+        />
+        {hasBarSelection ? (
+          <NumberControl
+            label="柱宽比例"
+            value={barWidthScale}
+            min={0.1}
+            max={2}
+            step={0.05}
+            onChange={(value) => onApply({ barWidthScale: value })}
+          />
+        ) : null}
+        <NumberControl
+          label="填充透明度"
+          value={fillOpacity}
+          min={0.1}
+          max={1}
+          step={0.05}
+          onChange={(value) => onApply({ fillOpacity: value })}
+        />
+        <NumberControl
+          label="整体透明度"
+          value={opacity}
+          min={0.1}
+          max={1}
+          step={0.05}
+          onChange={(value) => onApply({ opacity: value })}
+        />
+      </div>
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="mt-2 h-7 w-full justify-center gap-1.5 text-[11px]"
+        onClick={() => onApply({
+          color: undefined,
+          stroke: undefined,
+          strokeWidth: undefined,
+          fillOpacity: undefined,
+          opacity: undefined,
+          pointSize: undefined,
+          barWidthScale: undefined,
+        })}
+      >
+        <RotateCcw className="h-3 w-3" />
+        清除覆盖
+      </Button>
+    </div>
+  );
+}
+
+function FigureInspector({
+  config,
+  figure,
+  selectedElements,
+  activeObject,
+  onSelectObject,
+  onAction,
+}: {
+  config: ChartConfig;
+  figure: FigureModel;
+  selectedElements: SelectedChartElement[];
+  activeObject: FigureObjectRef | null;
+  onSelectObject: (object: FigureObjectRef | null) => void;
+  onAction: (action: ChartAction) => void;
+}) {
+  const [annotationText, setAnnotationText] = useState("");
+  const activeAnnotation = activeObject?.kind === "annotation"
+    ? figure.annotations?.find((annotation) => annotation.id === activeObject.id)
+    : undefined;
+  const background = figure.layout?.background?.transparent ? "#ffffff" : figure.layout?.background?.color ?? "#ffffff";
+  const titleText = figure.title?.text ?? config.title ?? "";
+  const captionText = figure.caption?.text ?? config.caption ?? config.description ?? "";
+  const xTitle = figure.axes?.x?.title ?? config.xLabel ?? config.xField ?? "";
+  const yTitle = figure.axes?.y?.title ?? config.yLabel ?? (config.unit ? `Value (${config.unit})` : "");
+  const showXAxis = figure.axes?.x?.visible !== false;
+  const showYAxis = figure.axes?.y?.visible !== false;
+  const showLegend = figure.legend?.visible !== false;
+  const showGrid = figure.grid?.visible !== false;
+  const canAnnotate = selectedElements.length > 0 && annotationText.trim().length > 0;
+
+  return (
+    <div className="border-b border-border/70 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+        <p className="truncate text-xs font-semibold text-foreground/90">图像属性</p>
+      </div>
+
+      <FigureObjectList
+        figure={figure}
+        activeObject={activeObject}
+        onSelectObject={onSelectObject}
+      />
+
+      <div className="space-y-2">
+        {activeObject?.kind === "background" || !activeObject ? (
+          <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+            背景
+            <input
+              type="color"
+              value={background}
+              onChange={(event) => onAction({ type: "update_background", patch: { color: event.target.value, transparent: false } })}
+              className="h-8 w-full rounded border border-border bg-background p-1"
+              aria-label="Figure background color"
+            />
+          </label>
+        ) : null}
+
+        {activeObject?.kind === "title" ? (
+          <TextBlockInspector
+            label="标题"
+            value={titleText}
+            visible={figure.title?.visible !== false}
+            onTextChange={(text) => onAction({ type: "update_text_block", target: "title", patch: { text, visible: text.trim().length > 0 } })}
+            onVisibleChange={(visible) => onAction({ type: "update_text_block", target: "title", patch: { visible } })}
+          />
+        ) : null}
+
+        {activeObject?.kind === "caption" ? (
+          <TextBlockInspector
+            label="说明"
+            value={captionText}
+            visible={figure.caption?.visible !== false}
+            onTextChange={(text) => onAction({ type: "update_text_block", target: "caption", patch: { text, visible: text.trim().length > 0 } })}
+            onVisibleChange={(visible) => onAction({ type: "update_text_block", target: "caption", patch: { visible } })}
+          />
+        ) : null}
+
+        {activeObject?.id === "axis.x" || !activeObject ? (
+          <AxisInspector
+            label="X 轴"
+            title={xTitle}
+            visible={showXAxis}
+            onTitleChange={(title) => onAction({ type: "update_axis", axis: "x", patch: { title } })}
+            onVisibleChange={(visible) => onAction({ type: "update_axis", axis: "x", patch: { visible } })}
+          />
+        ) : null}
+
+        {activeObject?.id === "axis.y" || !activeObject ? (
+          <AxisInspector
+            label="Y 轴"
+            title={yTitle}
+            visible={showYAxis}
+            onTitleChange={(title) => onAction({ type: "update_axis", axis: "y", patch: { title } })}
+            onVisibleChange={(visible) => onAction({ type: "update_axis", axis: "y", patch: { visible } })}
+          />
+        ) : null}
+
+        {activeObject?.kind === "legend" || !activeObject ? (
+          <ToggleControl
+            label="图例"
+            checked={showLegend}
+            onChange={(checked) => onAction({ type: "update_legend", patch: { visible: checked } })}
+          />
+        ) : null}
+
+        {activeObject?.kind === "grid" || !activeObject ? (
+          <ToggleControl
+            label="网格"
+            checked={showGrid}
+            onChange={(checked) => onAction({ type: "update_grid", patch: { visible: checked, y: checked } })}
+          />
+        ) : null}
+
+        {activeAnnotation ? (
+          <AnnotationInspector
+            annotation={activeAnnotation}
+            onUpdate={(patch) => onAction({ type: "update_annotation", annotationId: activeAnnotation.id, patch })}
+            onDelete={() => {
+              onAction({ type: "delete_annotation", annotationId: activeAnnotation.id });
+              onSelectObject(null);
+            }}
+          />
+        ) : null}
+
+        <div className="rounded border border-border/70 p-2">
+          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+            <MessageSquarePlus className="h-3 w-3" aria-hidden />
+            注释
+          </div>
+          <input
+            value={annotationText}
+            onChange={(event) => setAnnotationText(event.target.value)}
+            placeholder={selectedElements.length > 0 ? "给选中元素添加注释" : "先选择图表元素"}
+            className="h-8 w-full rounded border border-border bg-background px-2 text-xs text-foreground"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={!canAnnotate}
+            className="mt-1 h-7 w-full justify-center gap-1.5 text-[11px]"
+            onClick={() => {
+              const text = annotationText.trim();
+              if (!text) return;
+              const id = `annotation-${Date.now()}-${(figure.annotations?.length ?? 0) + 1}`;
+              onAction({
+                type: "add_annotation",
+                targetElementIds: selectedElements.map((item) => item.elementId),
+                annotation: {
+                  id,
+                  text,
+                  elementIds: selectedElements.map((item) => item.elementId),
+                  connector: "arrow",
+                },
+              });
+              setAnnotationText("");
+              onSelectObject({ kind: "annotation", id });
+            }}
+          >
+            <MessageSquarePlus className="h-3 w-3" />
+            添加注释
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FigureObjectList({
+  figure,
+  activeObject,
+  onSelectObject,
+}: {
+  figure: FigureModel;
+  activeObject: FigureObjectRef | null;
+  onSelectObject: (object: FigureObjectRef | null) => void;
+}) {
+  const objects: Array<{ ref: FigureObjectRef | null; label: string }> = [
+    { ref: null, label: "全部" },
+    { ref: { kind: "background", id: "background" }, label: "背景" },
+    { ref: { kind: "title", id: "title" }, label: "标题" },
+    { ref: { kind: "caption", id: "caption" }, label: "说明" },
+    { ref: { kind: "axis", id: "axis.x" }, label: "X 轴" },
+    { ref: { kind: "axis", id: "axis.y" }, label: "Y 轴" },
+    { ref: { kind: "legend", id: "legend" }, label: "图例" },
+    { ref: { kind: "grid", id: "grid" }, label: "网格" },
+    ...(figure.annotations ?? []).map((annotation, index) => ({
+      ref: { kind: "annotation" as const, id: annotation.id },
+      label: `注释 ${index + 1}`,
+    })),
+  ];
+
+  return (
+    <div className="mb-2 rounded border border-border/70 p-2">
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <Layers3 className="h-3 w-3" aria-hidden />
+        对象
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {objects.map((object) => {
+          const selected = object.ref === null
+            ? activeObject === null
+            : activeObject?.kind === object.ref.kind && activeObject.id === object.ref.id;
+          return (
+            <button
+              key={object.ref ? `${object.ref.kind}:${object.ref.id}` : "all"}
+              type="button"
+              onClick={() => onSelectObject(object.ref)}
+              className={cn(
+                "h-6 rounded border px-2 text-[11px] transition-colors",
+                selected
+                  ? "border-primary bg-primary/10 text-foreground"
+                  : "border-border bg-background text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {object.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TextBlockInspector({
+  label,
+  value,
+  visible,
+  onTextChange,
+  onVisibleChange,
+}: {
+  label: string;
+  value: string;
+  visible: boolean;
+  onTextChange: (value: string) => void;
+  onVisibleChange: (visible: boolean) => void;
+}) {
+  return (
+    <div className="rounded border border-border/70 p-2">
+      <ToggleControl label={label} checked={visible} onChange={onVisibleChange} />
+      <label className="mt-2 block space-y-1 text-[11px] font-medium text-muted-foreground">
+        文本
+        <input
+          value={value}
+          onChange={(event) => onTextChange(event.target.value)}
+          className="h-8 w-full rounded border border-border bg-background px-2 text-xs text-foreground"
+        />
+      </label>
+    </div>
+  );
+}
+
+function AxisInspector({
+  label,
+  title,
+  visible,
+  onTitleChange,
+  onVisibleChange,
+}: {
+  label: string;
+  title: string;
+  visible: boolean;
+  onTitleChange: (title: string) => void;
+  onVisibleChange: (visible: boolean) => void;
+}) {
+  return (
+    <div className="rounded border border-border/70 p-2">
+      <ToggleControl label={label} checked={visible} onChange={onVisibleChange} />
+      <label className="mt-2 block space-y-1 text-[11px] font-medium text-muted-foreground">
+        标题
+        <input
+          value={title}
+          onChange={(event) => onTitleChange(event.target.value)}
+          className="h-8 w-full rounded border border-border bg-background px-2 text-xs text-foreground"
+        />
+      </label>
+    </div>
+  );
+}
+
+function AnnotationInspector({
+  annotation,
+  onUpdate,
+  onDelete,
+}: {
+  annotation: NonNullable<FigureModel["annotations"]>[number];
+  onUpdate: (patch: Partial<NonNullable<FigureModel["annotations"]>[number]>) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="rounded border border-border/70 p-2">
+      <div className="mb-1 text-[11px] font-medium text-muted-foreground">当前注释</div>
+      <input
+        value={annotation.text}
+        onChange={(event) => onUpdate({ text: event.target.value })}
+        className="h-8 w-full rounded border border-border bg-background px-2 text-xs text-foreground"
+      />
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <ToggleControl
+          label="显示"
+          checked={annotation.visible !== false}
+          onChange={(visible) => onUpdate({ visible })}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 justify-center text-[11px]"
+          onClick={onDelete}
+        >
+          删除
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ToggleControl({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex h-8 items-center justify-between rounded border border-border bg-background px-2 text-[11px] font-medium text-muted-foreground">
+      <span className="flex items-center gap-1.5">
+        {label === "网格" ? <Grid3X3 className="h-3 w-3" aria-hidden /> : null}
+        {label}
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-3.5 w-3.5 accent-primary"
+      />
+    </label>
+  );
+}
+
+function NumberControl({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+      {label}
+      <input
+        type="number"
+        value={formatControlNumber(value)}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          if (Number.isFinite(next)) onChange(next);
+        }}
+        className="h-8 w-full rounded border border-border bg-background px-2 text-xs text-foreground"
+      />
+    </label>
+  );
+}
+
+function mergedSelectedStyle(
+  selectedElements: SelectedChartElement[],
+  elementStyles: Map<string, ChartElementStyle>,
+): ChartElementStyle {
+  const merged: ChartElementStyle = {};
+  for (const item of selectedElements) {
+    Object.assign(merged, elementStyles.get(item.elementId));
+  }
+  return merged;
+}
+
 function ChartThumbnail({
   assetId,
   config,
@@ -263,7 +845,7 @@ function ChartThumbnail({
 }: {
   assetId: string;
   config: ChartConfig;
-  elementStyles: Map<string, { color?: string; stroke?: string; strokeWidth?: number }>;
+  elementStyles: Map<string, ChartElementStyle>;
 }) {
   const data = config.data as Record<string, unknown>[];
 
@@ -535,6 +1117,10 @@ function ratioNumber(value: string | number): number {
   return Number.isFinite(n) && n > 0 ? n : 4 / 3;
 }
 
+function formatControlNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 function triggerDownload(url: string, filename: string): void {
   const a = document.createElement("a");
   a.href = url;
@@ -725,41 +1311,58 @@ function exportColor(computed: string, original: string | null): string | null {
 async function exportChartConfigToPng(
   assetId: string,
   config: ChartConfig,
-  elementStyles: Map<string, { color?: string; stroke?: string; strokeWidth?: number }>,
+  elementStyles: Map<string, ChartElementStyle>,
   filename: string,
+  figure: FigureModel = normalizeFigureModel(config),
 ): Promise<void> {
   const canvas = document.createElement("canvas");
-  const aspect = ratioNumber(config.aspectRatio ?? "4:3");
-  canvas.width = 1600;
-  canvas.height = Math.round(canvas.width / aspect);
+  const aspect = ratioNumber(figure.layout?.aspectRatio ?? config.aspectRatio ?? "4:3");
+  canvas.width = figure.exportSettings?.width ?? 1600;
+  canvas.height = figure.exportSettings?.height ?? Math.round(canvas.width / aspect);
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  ctx.fillStyle = JOURNAL_CHART_STYLE.background;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const background = figure.layout?.background;
+  if (!background?.transparent) {
+    ctx.fillStyle = background?.color ?? JOURNAL_CHART_STYLE.background;
+    ctx.globalAlpha = background?.opacity ?? 1;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = 1;
+  }
 
   ctx.fillStyle = JOURNAL_CHART_STYLE.axisColor;
   ctx.font = `700 34px ${JOURNAL_CHART_STYLE.fontFamily}`;
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  if (config.title) {
-    ctx.fillText(config.title, 72, 44);
+  const titleText = figure.title?.visible === false ? undefined : figure.title?.text ?? config.title;
+  if (titleText) {
+    ctx.fillText(titleText, 72, 44);
   }
 
   if (config.type === "pie") {
-    drawPieExport(ctx, assetId, config, elementStyles);
+    drawPieExport(ctx, assetId, config, elementStyles, figure);
   } else if (config.type === "volcano") {
     drawVolcanoExport(ctx, assetId, config, elementStyles);
   } else if (config.type === "box") {
     drawBoxExport(ctx, assetId, config, elementStyles);
   } else {
-    drawCartesianExport(ctx, assetId, config, elementStyles);
+    drawCartesianExport(ctx, assetId, config, elementStyles, figure);
   }
 
-  if (config.caption || config.description) {
+  const captionText = figure.caption?.visible === false ? undefined : figure.caption?.text ?? config.caption ?? config.description;
+  if (captionText && figure.exportSettings?.includeCaption !== false) {
     ctx.fillStyle = JOURNAL_CHART_STYLE.mutedText;
     ctx.font = `22px ${JOURNAL_CHART_STYLE.fontFamily}`;
-    ctx.fillText(config.caption ?? config.description ?? "", 72, canvas.height - 70);
+    ctx.fillText(captionText, 72, canvas.height - 70);
+  }
+
+  const visibleAnnotations = figure.annotations?.filter((annotation) => annotation.visible !== false) ?? [];
+  if (visibleAnnotations.length > 0) {
+    ctx.fillStyle = JOURNAL_CHART_STYLE.mutedText;
+    ctx.font = `20px ${JOURNAL_CHART_STYLE.fontFamily}`;
+    visibleAnnotations.slice(0, 4).forEach((annotation, index) => {
+      ctx.fillText(`• ${annotation.text}`, 72, canvas.height - 116 - index * 28);
+    });
   }
 
   const blob = await new Promise<Blob | null>((resolve) =>
@@ -775,7 +1378,8 @@ function drawCartesianExport(
   ctx: CanvasRenderingContext2D,
   assetId: string,
   config: ChartConfig,
-  elementStyles: Map<string, { color?: string }>,
+  elementStyles: Map<string, ChartElementStyle>,
+  figure: FigureModel,
 ): void {
   const data = config.data as Record<string, unknown>[];
   const fields = config.yFields ?? [config.yField].filter(Boolean) as string[];
@@ -798,10 +1402,12 @@ function drawCartesianExport(
   for (let i = 0; i <= 5; i += 1) {
     const value = minValue + (span * i) / 5;
     const y = yFor(value);
-    ctx.beginPath();
-    ctx.moveTo(plot.x, y);
-    ctx.lineTo(plot.x + plot.w, y);
-    ctx.stroke();
+    if (figure.grid?.visible !== false) {
+      ctx.beginPath();
+      ctx.moveTo(plot.x, y);
+      ctx.lineTo(plot.x + plot.w, y);
+      ctx.stroke();
+    }
     ctx.fillText(formatExportNumber(value), plot.x - 14, y);
   }
 
@@ -813,7 +1419,10 @@ function drawCartesianExport(
   ctx.lineTo(plot.x + plot.w, plot.y + plot.h);
   ctx.stroke();
 
-  if (config.yLabel || config.unit) {
+  const xAxisTitle = figure.axes?.x?.visible === false ? "" : figure.axes?.x?.title ?? config.xLabel ?? config.xField ?? "";
+  const yAxisTitle = figure.axes?.y?.visible === false ? "" : figure.axes?.y?.title ?? config.yLabel ?? (config.unit ? `Value (${config.unit})` : "");
+
+  if (yAxisTitle) {
     ctx.save();
     ctx.translate(34, plot.y + plot.h / 2);
     ctx.rotate(-Math.PI / 2);
@@ -821,16 +1430,16 @@ function drawCartesianExport(
     ctx.font = `24px ${JOURNAL_CHART_STYLE.fontFamily}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(config.yLabel ?? `Value (${config.unit})`, 0, 0);
+    ctx.fillText(yAxisTitle, 0, 0);
     ctx.restore();
   }
 
-  if (config.xLabel || config.xField) {
+  if (xAxisTitle) {
     ctx.fillStyle = JOURNAL_CHART_STYLE.axisColor;
     ctx.font = `24px ${JOURNAL_CHART_STYLE.fontFamily}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText(config.xLabel ?? config.xField ?? "", plot.x + plot.w / 2, plot.y + plot.h + 58);
+    ctx.fillText(xAxisTitle, plot.x + plot.w / 2, plot.y + plot.h + 58);
   }
 
   if (config.type === "bar") {
@@ -842,10 +1451,16 @@ function drawCartesianExport(
       fields.forEach((field, fieldIndex) => {
         const category = String(row[xKey] ?? "");
         const value = Number(row[field] ?? 0) || 0;
-        const x = plot.x + rowIndex * groupW + barGap + fieldIndex * barW;
+        const baseX = plot.x + rowIndex * groupW + barGap + fieldIndex * barW;
         const y = yFor(value);
         const baseline = yFor(0);
-        const w = barW * 0.82;
+        const baseW = barW * 0.82;
+        const elementStyle = elementStyles.get(chartElementId(assetId, field, category));
+        if (!resolveElementVisible(config, elementStyles, assetId, field, category, true, row)) return;
+        const widthScale = resolveElementBarWidthScale(config, elementStyles, assetId, field, category, 1, row);
+        const w = baseW * widthScale;
+        const x = baseX + (baseW - w) / 2;
+        ctx.globalAlpha = elementStyle?.opacity ?? 1;
         ctx.fillStyle = elementColor(
           config,
           elementStyles,
@@ -855,7 +1470,15 @@ function drawCartesianExport(
           config.colors?.[fieldIndex] ?? DEFAULT_THUMB_COLORS[fieldIndex % DEFAULT_THUMB_COLORS.length],
           row,
         );
+        const fillOpacity = resolveElementFillOpacity(config, elementStyles, assetId, field, category, 1, row);
+        ctx.globalAlpha = (elementStyle?.opacity ?? 1) * fillOpacity;
         ctx.fillRect(x, Math.min(y, baseline), w, Math.abs(baseline - y));
+        ctx.globalAlpha = 1;
+        if (elementStyle?.stroke || elementStyle?.strokeWidth) {
+          ctx.strokeStyle = elementStyle.stroke ?? JOURNAL_CHART_STYLE.axisColor;
+          ctx.lineWidth = elementStyle.strokeWidth ?? 1.5;
+          ctx.strokeRect(x, Math.min(y, baseline), w, Math.abs(baseline - y));
+        }
         barCenters.set(`${field}@@${category}`, { x: x + w / 2, y, value });
         const error = errorValue(config, row, field);
         if (error !== null) {
@@ -901,11 +1524,15 @@ function drawCartesianExport(
       ctx.lineCap = "round";
       ctx.stroke();
 
-      points.forEach((point) => {
+      points.forEach((point, pointIndex) => {
+        const category = String(data[pointIndex]?.[xKey] ?? "");
+        const elementStyle = elementStyles.get(chartElementId(assetId, field, category));
         ctx.beginPath();
-        ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = baseColor;
+        ctx.arc(point.x, point.y, elementStyle?.pointSize ?? 5, 0, Math.PI * 2);
+        ctx.fillStyle = elementStyle?.color ?? baseColor;
+        ctx.globalAlpha = elementStyle?.opacity ?? 1;
         ctx.fill();
+        ctx.globalAlpha = 1;
       });
 
       points.forEach((point, pointIndex) => {
@@ -929,14 +1556,17 @@ function drawCartesianExport(
     ctx.fillText(String(row[xKey] ?? ""), x, plot.y + plot.h + 18);
   });
 
-  drawLegend(ctx, fields, config.colors, plot.x, 870);
+  if (figure.legend?.visible !== false) {
+    drawLegend(ctx, fields, config.colors, plot.x, 870);
+  }
 }
 
 function drawPieExport(
   ctx: CanvasRenderingContext2D,
   assetId: string,
   config: ChartConfig,
-  elementStyles: Map<string, { color?: string }>,
+  elementStyles: Map<string, ChartElementStyle>,
+  figure: FigureModel,
 ): void {
   const data = config.data as Record<string, unknown>[];
   const nameKey = config.nameField ?? "name";
@@ -962,42 +1592,47 @@ function drawPieExport(
       config.colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length],
       row,
     );
+    const elementStyle = elementStyles.get(chartElementId(assetId, name, name));
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.arc(cx, cy, r, start, end);
     ctx.closePath();
     ctx.fillStyle = color;
+    ctx.globalAlpha = elementStyle?.opacity ?? 1;
     ctx.fill();
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 4;
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = elementStyle?.stroke ?? "#ffffff";
+    ctx.lineWidth = elementStyle?.strokeWidth ?? 4;
     ctx.stroke();
     start = end;
   });
 
-  drawLegend(
-    ctx,
-    data.map((row) => String(row[nameKey] ?? "")),
-    data.map((row, index) =>
-      elementColor(
-        config,
-        elementStyles,
-        assetId,
-        String(row[nameKey] ?? ""),
-        String(row[nameKey] ?? ""),
-        config.colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length],
-        row,
+  if (figure.legend?.visible !== false) {
+    drawLegend(
+      ctx,
+      data.map((row) => String(row[nameKey] ?? "")),
+      data.map((row, index) =>
+        elementColor(
+          config,
+          elementStyles,
+          assetId,
+          String(row[nameKey] ?? ""),
+          String(row[nameKey] ?? ""),
+          config.colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length],
+          row,
+        ),
       ),
-    ),
-    1120,
-    280,
-  );
+      1120,
+      280,
+    );
+  }
 }
 
 function drawVolcanoExport(
   ctx: CanvasRenderingContext2D,
   assetId: string,
   config: ChartConfig,
-  elementStyles: Map<string, { color?: string }>,
+  elementStyles: Map<string, ChartElementStyle>,
 ): void {
   const data = config.data as Record<string, unknown>[];
   const xField = config.xValueField ?? config.xField ?? "log2FoldChange";
@@ -1042,12 +1677,18 @@ function drawVolcanoExport(
     const group = groupField ? String(row[groupField] ?? "") : "";
     const series = group || (Math.abs(x) >= xThreshold && y >= yThreshold ? (x > 0 ? "up" : "down") : "not significant");
     const id = `${assetId}_${series}_${label}`.replace(/[^a-zA-Z0-9_]/g, "_");
-    const color = elementStyles.get(id)?.color ?? (series === "up" ? journalColor(1) : series === "down" ? journalColor(0) : "#9CA3AF");
+    const elementStyle = elementStyles.get(id);
+    const color = elementStyle?.color ?? (series === "up" ? journalColor(1) : series === "down" ? journalColor(0) : "#9CA3AF");
     ctx.fillStyle = color;
-    ctx.globalAlpha = series === "not significant" ? 0.45 : 0.82;
+    ctx.globalAlpha = elementStyle?.opacity ?? (series === "not significant" ? 0.45 : 0.82);
     ctx.beginPath();
-    ctx.arc(xToPx(x), yToPx(y), 3.2, 0, Math.PI * 2);
+    ctx.arc(xToPx(x), yToPx(y), elementStyle?.pointSize ?? 3.2, 0, Math.PI * 2);
     ctx.fill();
+    if (elementStyle?.stroke || elementStyle?.strokeWidth) {
+      ctx.strokeStyle = elementStyle.stroke ?? JOURNAL_CHART_STYLE.axisColor;
+      ctx.lineWidth = elementStyle.strokeWidth ?? 1.5;
+      ctx.stroke();
+    }
   });
   ctx.globalAlpha = 1;
 }
@@ -1056,7 +1697,7 @@ function drawBoxExport(
   ctx: CanvasRenderingContext2D,
   assetId: string,
   config: ChartConfig,
-  elementStyles: Map<string, { color?: string }>,
+  elementStyles: Map<string, ChartElementStyle>,
 ): void {
   const data = config.data as Record<string, unknown>[];
   const xKey = config.xField ?? "group";
@@ -1075,7 +1716,8 @@ function drawBoxExport(
   data.forEach((row, index) => {
     const category = String(row[xKey] ?? `Group ${index + 1}`);
     const id = `${assetId}_box_${category}`.replace(/[^a-zA-Z0-9_]/g, "_");
-    const color = elementStyles.get(id)?.color ?? config.colors?.[index] ?? journalColor(index);
+    const elementStyle = elementStyles.get(id);
+    const color = elementStyle?.color ?? config.colors?.[index] ?? journalColor(index);
     const cx = plot.x + ((index + 0.5) / data.length) * plot.w;
     const boxW = Math.min(110, (plot.w / data.length) * 0.48);
     const yMin = yFor(Number(row[minField] ?? 0));
@@ -1093,8 +1735,12 @@ function drawBoxExport(
     ctx.moveTo(cx - boxW * 0.28, yMin);
     ctx.lineTo(cx + boxW * 0.28, yMin);
     ctx.stroke();
-    ctx.fillStyle = hexToRgba(color, 0.62);
+    ctx.fillStyle = hexToRgba(color, elementStyle?.fillOpacity ?? 0.62);
+    ctx.globalAlpha = elementStyle?.opacity ?? 1;
     ctx.fillRect(cx - boxW / 2, yQ3, boxW, Math.max(1, yQ1 - yQ3));
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = elementStyle?.stroke ?? JOURNAL_CHART_STYLE.axisColor;
+    ctx.lineWidth = elementStyle?.strokeWidth ?? 2;
     ctx.strokeRect(cx - boxW / 2, yQ3, boxW, Math.max(1, yQ1 - yQ3));
     ctx.beginPath();
     ctx.moveTo(cx - boxW / 2, yMed);

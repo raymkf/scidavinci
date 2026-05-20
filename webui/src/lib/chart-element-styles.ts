@@ -9,7 +9,20 @@ export function chartElementId(chartId: string, series: string, category: string
 function isStyle(value: unknown): value is ChartElementStyle {
   if (!value || typeof value !== "object") return false;
   const style = value as ChartElementStyle;
-  return style.color !== undefined || style.stroke !== undefined || style.strokeWidth !== undefined;
+  return (
+    style.color !== undefined
+    || style.stroke !== undefined
+    || style.strokeWidth !== undefined
+    || style.fillOpacity !== undefined
+    || style.opacity !== undefined
+    || style.pointSize !== undefined
+    || style.visible !== undefined
+    || style.zIndex !== undefined
+    || style.barWidthScale !== undefined
+    || style.fontSize !== undefined
+    || style.fontWeight !== undefined
+    || style.textColor !== undefined
+  );
 }
 
 export function rowElementStyle(row: Record<string, unknown>, series: string): ChartElementStyle | undefined {
@@ -78,4 +91,81 @@ export function resolveElementStrokeWidth(
 ): number | undefined {
   const id = chartElementId(chartId, series, category);
   return runtimeStyles.get(id)?.strokeWidth ?? configuredElementStyle(config, chartId, series, category, row)?.strokeWidth;
+}
+
+export function resolveElementFillOpacity(
+  config: ChartConfig,
+  runtimeStyles: StyleMap,
+  chartId: string,
+  series: string,
+  category: string | number,
+  fallback: number,
+  row?: Record<string, unknown>,
+): number {
+  const id = chartElementId(chartId, series, category);
+  return runtimeStyles.get(id)?.fillOpacity
+    ?? configuredElementStyle(config, chartId, series, category, row)?.fillOpacity
+    ?? fallback;
+}
+
+export function resolveElementOpacity(
+  config: ChartConfig,
+  runtimeStyles: StyleMap,
+  chartId: string,
+  series: string,
+  category: string | number,
+  fallback: number,
+  row?: Record<string, unknown>,
+): number {
+  const id = chartElementId(chartId, series, category);
+  return runtimeStyles.get(id)?.opacity
+    ?? configuredElementStyle(config, chartId, series, category, row)?.opacity
+    ?? fallback;
+}
+
+export function resolveElementVisible(
+  config: ChartConfig,
+  runtimeStyles: StyleMap,
+  chartId: string,
+  series: string,
+  category: string | number,
+  fallback: boolean,
+  row?: Record<string, unknown>,
+): boolean {
+  const id = chartElementId(chartId, series, category);
+  return runtimeStyles.get(id)?.visible
+    ?? configuredElementStyle(config, chartId, series, category, row)?.visible
+    ?? fallback;
+}
+
+export function resolveElementPointSize(
+  config: ChartConfig,
+  runtimeStyles: StyleMap,
+  chartId: string,
+  series: string,
+  category: string | number,
+  fallback: number,
+  row?: Record<string, unknown>,
+): number {
+  const id = chartElementId(chartId, series, category);
+  return runtimeStyles.get(id)?.pointSize
+    ?? configuredElementStyle(config, chartId, series, category, row)?.pointSize
+    ?? fallback;
+}
+
+export function resolveElementBarWidthScale(
+  config: ChartConfig,
+  runtimeStyles: StyleMap,
+  chartId: string,
+  series: string,
+  category: string | number,
+  fallback = 1,
+  row?: Record<string, unknown>,
+): number {
+  const id = chartElementId(chartId, series, category);
+  const value = runtimeStyles.get(id)?.barWidthScale
+    ?? configuredElementStyle(config, chartId, series, category, row)?.barWidthScale
+    ?? fallback;
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(2, Math.max(0.08, value));
 }
