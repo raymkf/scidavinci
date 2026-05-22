@@ -34,7 +34,7 @@ export function ThreadViewport({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({
-      top: el.scrollHeight,
+      top: Math.max(0, el.scrollHeight - el.clientHeight),
       behavior: smooth ? "smooth" : "auto",
     });
   }, []);
@@ -54,13 +54,15 @@ export function ThreadViewport({
 
   useEffect(() => {
     const content = contentRef.current;
-    if (!content || typeof ResizeObserver === "undefined") return;
+    const scroller = scrollRef.current;
+    if (!content || !scroller || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
       if (!autoStickRef.current) return;
       scrollToBottom(false);
       updateBottomState();
     });
     observer.observe(content);
+    observer.observe(scroller);
     return () => observer.disconnect();
   }, [scrollToBottom, updateBottomState]);
 
@@ -90,49 +92,51 @@ export function ThreadViewport({
   }, []);
 
   return (
-    <div className="relative flex min-h-0 flex-1 overflow-hidden">
-      <div
-        ref={scrollRef}
-        className={cn(
-          "absolute inset-0 overflow-y-auto overscroll-contain scrollbar-thin",
-          "[&::-webkit-scrollbar]:w-1.5",
-          "[&::-webkit-scrollbar-thumb]:rounded-full",
-          "[&::-webkit-scrollbar-thumb]:bg-muted-foreground/30",
-          "[&::-webkit-scrollbar-track]:bg-transparent",
-        )}
-      >
-        <div ref={contentRef} className="min-h-full">
-          {hasMessages ? (
-            <div className="mx-auto flex min-h-full w-full max-w-[64rem] flex-col">
-              <div className="flex-1 px-4 pb-20 pt-4">
-                <div className="mx-auto w-full max-w-[49.5rem]">
-                  <ThreadMessages messages={messages} />
-                </div>
-              </div>
-
-              <div className="sticky bottom-0 z-10 mt-auto bg-background">
-                <div className="px-4 pb-3">
-                  {composer}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="mx-auto flex min-h-full w-full max-w-[64rem] flex-col px-4">
-              <div className="flex w-full flex-1 justify-center pb-16 pt-14 md:pt-[3.5rem]">
-                <div className="flex w-full max-w-[40rem] flex-col gap-5">
-                  {emptyState}
-                  <div className="w-full">{composer}</div>
-                </div>
-              </div>
-            </div>
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div
+          ref={scrollRef}
+          className={cn(
+            "absolute inset-0 overflow-y-auto overscroll-contain scrollbar-thin",
+            "[&::-webkit-scrollbar]:w-1.5",
+            "[&::-webkit-scrollbar-thumb]:rounded-full",
+            "[&::-webkit-scrollbar-thumb]:bg-muted-foreground/30",
+            "[&::-webkit-scrollbar-track]:bg-transparent",
           )}
+        >
+          <div ref={contentRef} className="min-h-full">
+            {hasMessages ? (
+              <div className="mx-auto flex min-h-full w-full max-w-[64rem] flex-col">
+                <div className="flex-1 px-4 pb-6 pt-4">
+                  <div className="mx-auto w-full max-w-[49.5rem]">
+                    <ThreadMessages messages={messages} />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mx-auto flex min-h-full w-full max-w-[64rem] flex-col px-4">
+                <div className="flex w-full flex-1 justify-center pb-16 pt-14 md:pt-[3.5rem]">
+                  <div className="flex w-full max-w-[40rem] flex-col gap-5">
+                    {emptyState}
+                    <div className="w-full">{composer}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
+
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-background to-transparent"
+        />
       </div>
 
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-background to-transparent"
-      />
+      {hasMessages ? (
+        <div className="shrink-0 bg-background px-4 pb-3">
+          {composer}
+        </div>
+      ) : null}
 
       {!atBottom && (
         <Button

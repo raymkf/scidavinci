@@ -13,7 +13,6 @@ import {
   Plus,
   RotateCcw,
   SlidersHorizontal,
-  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
@@ -108,7 +107,6 @@ export function VisualWorkspacePanel() {
     anchors,
     activeAssetId,
     openAsset,
-    removeAsset,
     updateAssetAspectRatio,
     updateAssetBackground,
     getAssetAspectRatio,
@@ -363,16 +361,6 @@ export function VisualWorkspacePanel() {
                 title="Export current visual"
               >
                 <Download className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={() => removeAsset(activeAsset.id)}
-                className="h-7 w-7 rounded-full"
-                aria-label="Remove visual"
-              >
-                <X className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>

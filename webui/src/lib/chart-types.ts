@@ -241,6 +241,50 @@ export type ChartAction =
       style?: ChartElementStyle;
     }
   | {
+      type: "select_elements";
+      targetElementIds?: string[];
+      elements?: SelectedChartElement[];
+      mode?: "replace" | "add" | "toggle";
+    }
+  | {
+      type: "clear_selection";
+    }
+  | {
+      type: "style_current_selection";
+      style?: ChartElementStyle;
+    }
+  | {
+      type: "select_by_semantic_query";
+      assetId?: string | "active";
+      intent:
+        | "outliers"
+        | "top_n"
+        | "bottom_n"
+        | "threshold"
+        | "category"
+        | "label_match"
+        | "significant"
+        | "custom";
+      plan?: {
+        chartType?: ChartConfig["type"];
+        valueField?: string;
+        xField?: string;
+        yField?: string;
+        groupField?: string;
+        labelField?: string;
+        method?: string;
+        threshold?: number;
+        n?: number;
+        operator?: ">" | ">=" | "<" | "<=" | "=" | "!=";
+        categoryValue?: string | number;
+        labels?: string[];
+        mode?: "replace" | "add" | "toggle";
+        direction?: "up" | "down" | "both";
+        explanation?: string;
+      };
+      query?: Record<string, unknown>;
+    }
+  | {
       type: "style_by_query";
       query: Record<string, unknown>;
       style?: ChartElementStyle;

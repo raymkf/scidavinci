@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, type CSSProperties } from "react";
+import { useCallback, useEffect, useId, useMemo, type CSSProperties } from "react";
 
 import {
   BarChart,
@@ -141,6 +141,47 @@ function hexToRgba(hex: string, alpha: number): string {
   const g = (value >> 8) & 255;
   const b = value & 255;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function boxOutlierValuesForRow(
+  row: Record<string, unknown>,
+  fields: {
+    outliersField: string;
+    minField: string;
+    q1Field: string;
+    q3Field: string;
+    maxField: string;
+  },
+): Array<{ value: number; label?: string }> {
+  const explicit: Array<{ value: number; label?: string }> = [];
+  const raw = row[fields.outliersField];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (typeof item === "number" || typeof item === "string") {
+        explicit.push({ value: Number(item) || 0 });
+      } else if (item && typeof item === "object") {
+        const object = item as Record<string, unknown>;
+        explicit.push({
+          value: Number(object.value ?? object.y ?? object.outlier ?? 0) || 0,
+          label: object.label ? String(object.label) : undefined,
+        });
+      }
+    }
+  }
+  if (explicit.length > 0) return explicit;
+
+  const q1 = Number(row[fields.q1Field] ?? 0) || 0;
+  const q3 = Number(row[fields.q3Field] ?? 0) || 0;
+  const iqr = q3 - q1;
+  if (!Number.isFinite(iqr) || iqr <= 0) return [];
+  const min = Number(row[fields.minField] ?? 0) || 0;
+  const max = Number(row[fields.maxField] ?? 0) || 0;
+  const lowerFence = q1 - 1.5 * iqr;
+  const upperFence = q3 + 1.5 * iqr;
+  const inferred: Array<{ value: number; label?: string }> = [];
+  if (min < lowerFence) inferred.push({ value: min, label: `low outlier: ${min}` });
+  if (max > upperFence) inferred.push({ value: max, label: `high outlier: ${max}` });
+  return inferred;
 }
 
 interface BarShapeProps {
@@ -503,6 +544,7 @@ export function InteractiveChart({
             cx="50%"
             cy="50%"
             outerRadius={112}
+            isAnimationActive={false}
             cursor="pointer"
             label={({ name, value }: { name?: string; value?: number }) =>
               `${name ?? ""}: ${value ?? 0}${config.unit ?? ""}`
@@ -594,7 +636,7 @@ export function InteractiveChart({
       case "area":
         return renderAreaChart();
       case "volcano":
-        return <VolcanoCanvas config={config} chartId={chartId} onElementToggle={handleElementToggle} />;
+        return <VolcanoSvgPlot config={config} chartId={chartId} onElementToggle={handleElementToggle} />;
       case "box":
         return <BoxPlotSvg config={config} chartId={chartId} aspect={aspect} onElementToggle={handleElementToggle} />;
       case "bar":
@@ -739,10 +781,9 @@ function FigureHitZones({
   );
 }
 
-function VolcanoCanvas({ config, chartId, onElementToggle }: { config: ChartConfig; chartId: string; onElementToggle: (meta: ChartElementMetadata) => void }) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const pointsRef = useRef<Array<{ x: number; y: number; r: number; meta: ChartElementMetadata }>>([]);
+const VOLCANO_MAX_POINTS = 3000;
+
+function VolcanoSvgPlot({ config, chartId, onElementToggle }: { config: ChartConfig; chartId: string; onElementToggle: (meta: ChartElementMetadata) => void }) {
   const { selectedElements, elementStyles } = useChartSelection();
   const aspect = aspectNumber(config.aspectRatio ?? "4:3");
   const xField = config.xValueField ?? config.xField ?? "log2FoldChange";
@@ -751,149 +792,128 @@ function VolcanoCanvas({ config, chartId, onElementToggle }: { config: ChartConf
   const labelField = config.labelField ?? config.idField ?? "gene";
   const groupField = config.groupField;
 
-  useEffect(() => {
-    const wrap = wrapRef.current;
-    const canvas = canvasRef.current;
-    if (!wrap || !canvas) return;
+  const { points, xThreshold, yThreshold, maxAbsX, maxY } = useMemo(() => {
+    const data = config.data as Record<string, unknown>[];
+    const xThreshold = config.xThreshold ?? 1;
+    const yThreshold = config.yThreshold ?? -Math.log10(0.05);
 
-    const draw = () => {
-      const rect = wrap.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
-      const width = Math.max(320, rect.width);
-      const height = Math.max(240, width / aspect);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = JOURNAL_CHART_STYLE.background;
-      ctx.fillRect(0, 0, width, height);
+    const rows = data.map((row, index) => {
+      const x = Number(row[xField] ?? 0) || 0;
+      const yRaw = row[yField] !== undefined
+        ? Number(row[yField])
+        : -Math.log10(Math.max(Number(row[pField] ?? 1) || 1, Number.MIN_VALUE));
+      return { row, index, x, y: Number.isFinite(yRaw) ? yRaw : 0 };
+    });
 
-      const data = config.data as Record<string, unknown>[];
-      const rows = data.map((row, index) => {
-        const x = Number(row[xField] ?? 0) || 0;
-        const yRaw = row[yField] !== undefined
-          ? Number(row[yField])
-          : -Math.log10(Math.max(Number(row[pField] ?? 1) || 1, Number.MIN_VALUE));
-        return { row, index, x, y: Number.isFinite(yRaw) ? yRaw : 0 };
-      });
-      const maxAbsX = Math.max(...rows.map((p) => Math.abs(p.x)), Math.abs(config.xThreshold ?? 1), 1);
-      const maxY = Math.max(...rows.map((p) => p.y), config.yThreshold ?? 1.3, 1);
-      const plot = { x: 54, y: 18, w: width - 76, h: height - 76 };
-      const xToPx = (x: number) => plot.x + ((x + maxAbsX) / (maxAbsX * 2)) * plot.w;
-      const yToPx = (y: number) => plot.y + plot.h - (y / maxY) * plot.h;
+    const maxAbsX = Math.max(...rows.map((p) => Math.abs(p.x)), Math.abs(xThreshold), 1);
+    const maxY = Math.max(...rows.map((p) => p.y), yThreshold, 1);
 
-      ctx.strokeStyle = JOURNAL_CHART_STYLE.gridColor;
-      ctx.lineWidth = 1;
-      for (let i = 0; i <= 4; i += 1) {
-        const y = plot.y + (plot.h * i) / 4;
-        ctx.beginPath();
-        ctx.moveTo(plot.x, y);
-        ctx.lineTo(plot.x + plot.w, y);
-        ctx.stroke();
-      }
+    const points = rows.map(({ row, index, x, y }) => {
+      const label = String(row[labelField] ?? row.id ?? `Point ${index + 1}`);
+      const group = groupField ? String(row[groupField] ?? "") : "";
+      const series = group || (Math.abs(x) >= xThreshold && y >= yThreshold ? (x > 0 ? "up" : "down") : "not significant");
+      const elementId = chartElementId(chartId, series, label);
+      const meta: ChartElementMetadata = {
+        elementId,
+        chartType: "volcano",
+        series,
+        category: label,
+        value: y,
+        sourceRow: row,
+        label: `${label}: ${xField}=${x.toFixed(2)}, ${yField}=${y.toFixed(2)}`,
+      };
+      return { x, y, meta };
+    });
 
-      ctx.strokeStyle = JOURNAL_CHART_STYLE.axisColor;
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.moveTo(plot.x, plot.y);
-      ctx.lineTo(plot.x, plot.y + plot.h);
-      ctx.lineTo(plot.x + plot.w, plot.y + plot.h);
-      ctx.stroke();
+    return { points, xThreshold, yThreshold, maxAbsX, maxY };
+  }, [chartId, config, groupField, labelField, pField, xField, yField]);
 
-      const xThreshold = config.xThreshold ?? 1;
-      const yThreshold = config.yThreshold ?? -Math.log10(0.05);
-      ctx.strokeStyle = "#9CA3AF";
-      ctx.setLineDash([4, 4]);
-      [-xThreshold, xThreshold].forEach((x) => {
-        const px = xToPx(x);
-        ctx.beginPath();
-        ctx.moveTo(px, plot.y);
-        ctx.lineTo(px, plot.y + plot.h);
-        ctx.stroke();
-      });
-      ctx.beginPath();
-      ctx.moveTo(plot.x, yToPx(yThreshold));
-      ctx.lineTo(plot.x + plot.w, yToPx(yThreshold));
-      ctx.stroke();
-      ctx.setLineDash([]);
+  const tooMany = points.length > VOLCANO_MAX_POINTS;
+  const displayPoints = tooMany ? points.slice(0, VOLCANO_MAX_POINTS) : points;
 
-      const selected = new Set(selectedElements.map((item) => item.elementId));
-      const hitPoints: typeof pointsRef.current = [];
-      rows.forEach(({ row, index, x, y }) => {
-        const label = String(row[labelField] ?? row.id ?? `Point ${index + 1}`);
-        const group = groupField ? String(row[groupField] ?? "") : "";
-        const series = group || (Math.abs(x) >= xThreshold && y >= yThreshold ? (x > 0 ? "up" : "down") : "not significant");
-        const meta = {
-          elementId: `${chartId}_${series}_${label}`.replace(/[^a-zA-Z0-9_]/g, "_"),
-          chartType: "volcano" as const,
-          series,
-          category: label,
-          value: y,
-          sourceRow: row,
-          label: `${label}: ${xField}=${x.toFixed(2)}, ${yField}=${y.toFixed(2)}`,
-        };
-        const px = xToPx(x);
-        const py = yToPx(y);
-        const base = series === "up" ? journalColor(1) : series === "down" ? journalColor(0) : "#9CA3AF";
-        const color = elementStyles.get(meta.elementId)?.color ?? base;
-        const styledOpacity = elementStyles.get(meta.elementId)?.opacity;
-        const pointSize = elementStyles.get(meta.elementId)?.pointSize;
-        const isSelected = selected.has(meta.elementId);
-        ctx.globalAlpha = selected.size > 0 && !isSelected ? 0.28 : styledOpacity ?? 0.82;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(px, py, isSelected ? Math.max(4.5, pointSize ?? 0) : pointSize ?? 2.4, 0, Math.PI * 2);
-        ctx.fill();
-        if (isSelected) {
-          ctx.strokeStyle = elementStyles.get(meta.elementId)?.stroke ?? JOURNAL_CHART_STYLE.selectedStroke;
-          ctx.lineWidth = elementStyles.get(meta.elementId)?.strokeWidth ?? 1.4;
-          ctx.stroke();
-        }
-        hitPoints.push({ x: px, y: py, r: 7, meta });
-      });
-      ctx.globalAlpha = 1;
-      pointsRef.current = hitPoints;
+  const width = 900;
+  const height = width / aspect;
+  const plot = { x: 70, y: 24, w: width - 100, h: height - 95 };
 
-      ctx.fillStyle = JOURNAL_CHART_STYLE.axisColor;
-      ctx.font = `12px ${JOURNAL_CHART_STYLE.fontFamily}`;
-      ctx.textAlign = "center";
-      ctx.fillText(config.xLabel ?? "log2 fold change", plot.x + plot.w / 2, height - 14);
-      ctx.save();
-      ctx.translate(15, plot.y + plot.h / 2);
-      ctx.rotate(-Math.PI / 2);
-      ctx.fillText(config.yLabel ?? "-log10(p-value)", 0, 0);
-      ctx.restore();
-    };
+  const xToPx = (x: number) => plot.x + ((x + maxAbsX) / (maxAbsX * 2)) * plot.w;
+  const yToPx = (y: number) => plot.y + plot.h - (y / maxY) * plot.h;
 
-    draw();
-    const observer = new ResizeObserver(draw);
-    observer.observe(wrap);
-    return () => observer.disconnect();
-  }, [aspect, chartId, config, elementStyles, groupField, labelField, pField, selectedElements, xField, yField]);
+  const selectedIds = useMemo(() => new Set(selectedElements.map((e) => e.elementId)), [selectedElements]);
+  const hasSelection = selectedElements.length > 0;
 
   return (
-    <div ref={wrapRef} className="w-full" style={{ aspectRatio: String(aspect) }}>
-      <canvas
-        ref={canvasRef}
-        className="block w-full cursor-crosshair rounded-sm"
-        onClick={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect();
-          const x = event.clientX - rect.left;
-          const y = event.clientY - rect.top;
-          let best: { d: number; meta: ChartElementMetadata } | null = null;
-          for (const point of pointsRef.current) {
-            const d = Math.hypot(point.x - x, point.y - y);
-            if (d <= point.r && (!best || d < best.d)) best = { d, meta: point.meta };
-          }
-          if (best) {
-            onElementToggle(best.meta);
-          }
-        }}
-      />
+    <div className="w-full" style={{ aspectRatio: String(aspect) }}>
+      {tooMany && (
+        <div className="mb-2 rounded bg-amber-50 px-3 py-1.5 text-xs text-amber-800 border border-amber-200">
+          Too many points ({points.length}). Showing first {VOLCANO_MAX_POINTS}. Consider filtering or downsampling your data.
+        </div>
+      )}
+      <svg viewBox={`0 0 ${width} ${height}`} className="block w-full" role="figure">
+        {/* Grid lines */}
+        {[0, 1, 2, 3, 4].map((i) => {
+          const y = plot.y + (plot.h * i) / 4;
+          return <line key={`grid-${i}`} x1={plot.x} x2={plot.x + plot.w} y1={y} y2={y} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" />;
+        })}
+
+        {/* Axes */}
+        <path d={`M${plot.x},${plot.y} V${plot.y + plot.h} H${plot.x + plot.w}`} fill="none" stroke={JOURNAL_CHART_STYLE.axisColor} strokeWidth={1.4} />
+
+        {/* Threshold lines */}
+        <line x1={xToPx(-xThreshold)} x2={xToPx(-xThreshold)} y1={plot.y} y2={plot.y + plot.h} stroke="#9CA3AF" strokeDasharray="4 4" strokeWidth={1} />
+        <line x1={xToPx(xThreshold)} x2={xToPx(xThreshold)} y1={plot.y} y2={plot.y + plot.h} stroke="#9CA3AF" strokeDasharray="4 4" strokeWidth={1} />
+        <line x1={plot.x} x2={plot.x + plot.w} y1={yToPx(yThreshold)} y2={yToPx(yThreshold)} stroke="#9CA3AF" strokeDasharray="4 4" strokeWidth={1} />
+
+        {/* Points */}
+        {displayPoints.map((point) => {
+          const { meta, x, y } = point;
+          const px = xToPx(x);
+          const py = yToPx(y);
+          const isSelected = selectedIds.has(meta.elementId);
+          const style = elementStyles.get(meta.elementId);
+          const baseColor = meta.series === "up" ? journalColor(1) : meta.series === "down" ? journalColor(0) : "#9CA3AF";
+          const color = style?.color ?? baseColor;
+          const opacity = hasSelection && !isSelected ? 0.28 : (style?.opacity ?? 0.82);
+          const radius = isSelected ? Math.max(4.5, style?.pointSize ?? 0) : (style?.pointSize ?? 2.4);
+          const stroke = isSelected ? (style?.stroke ?? JOURNAL_CHART_STYLE.selectedStroke) : (style?.stroke ?? "none");
+          const strokeWidth = isSelected ? (style?.strokeWidth ?? 1.4) : (style?.strokeWidth ?? 0);
+
+          if (style?.visible === false) return null;
+
+          return (
+            <circle
+              key={meta.elementId}
+              cx={px}
+              cy={py}
+              r={radius}
+              fill={color}
+              opacity={opacity}
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              className="cursor-pointer transition-[fill,opacity,stroke,r] duration-200"
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                onElementToggle(meta);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onElementToggle(meta);
+                }
+              }}
+            />
+          );
+        })}
+
+        {/* Axis labels */}
+        <text x={plot.x + plot.w / 2} y={height - 12} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor} fontFamily={JOURNAL_CHART_STYLE.fontFamily}>
+          {config.xLabel ?? "log2 fold change"}
+        </text>
+        <text transform={`translate(16 ${plot.y + plot.h / 2}) rotate(-90)`} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor} fontFamily={JOURNAL_CHART_STYLE.fontFamily}>
+          {config.yLabel ?? "-log10(p-value)"}
+        </text>
+      </svg>
     </div>
   );
 }
@@ -907,10 +927,14 @@ function BoxPlotSvg({ config, chartId, aspect, onElementToggle }: { config: Char
   const medianField = config.medianField ?? "median";
   const q3Field = config.q3Field ?? "q3";
   const maxField = config.maxField ?? "max";
+  const outliersField = config.outliersField ?? "outliers";
   const width = 900;
   const height = width / aspect;
   const plot = { x: 70, y: 24, w: width - 100, h: height - 95 };
-  const values = data.flatMap((row) => [minField, q1Field, medianField, q3Field, maxField].map((field) => Number(row[field] ?? 0) || 0));
+  const values = data.flatMap((row) => [
+    ...[minField, q1Field, medianField, q3Field, maxField].map((field) => Number(row[field] ?? 0) || 0),
+    ...boxOutlierValuesForRow(row, { outliersField, minField, q1Field, q3Field, maxField }).map((item) => item.value),
+  ]);
   const min = Math.min(...values, 0);
   const max = Math.max(...values, 1);
   const span = Math.max(1, max - min);
@@ -937,6 +961,7 @@ function BoxPlotSvg({ config, chartId, aspect, onElementToggle }: { config: Char
         const yMed = yFor(Number(row[medianField] ?? 0));
         const yQ3 = yFor(Number(row[q3Field] ?? 0));
         const yMax = yFor(Number(row[maxField] ?? 0));
+        const outliers = boxOutlierValuesForRow(row, { outliersField, minField, q1Field, q3Field, maxField });
         const meta: ChartElementMetadata = {
           elementId,
           chartType: "box",
@@ -963,6 +988,37 @@ function BoxPlotSvg({ config, chartId, aspect, onElementToggle }: { config: Char
               strokeWidth={isSelected ? (style?.strokeWidth ?? 2.4) : (style?.strokeWidth ?? 1.4)}
             />
             <line x1={cx - boxW / 2} x2={cx + boxW / 2} y1={yMed} y2={yMed} stroke={JOURNAL_CHART_STYLE.axisColor} strokeWidth={2.2} />
+            {outliers.map((item, outlierIndex) => {
+              const value = item.value;
+              const outlierId = chartElementId(chartId, "outlier", `${category}_${outlierIndex + 1}`);
+              const outlierStyle = elementStyles.get(outlierId);
+              const outlierSelected = selected.has(outlierId);
+              const outlierMeta: ChartElementMetadata = {
+                elementId: outlierId,
+                chartType: "box",
+                series: "outlier",
+                category: `${category}_${outlierIndex + 1}`,
+                value,
+                sourceRow: row,
+                label: item.label ?? `${category} outlier ${outlierIndex + 1}: ${value}${config.unit ?? ""}`,
+              };
+              return (
+                <circle
+                  key={outlierId}
+                  cx={cx + ((outlierIndex % 3) - 1) * 8}
+                  cy={yFor(value)}
+                  r={outlierSelected ? 5.2 : 3.8}
+                  fill={outlierStyle?.color ?? JOURNAL_CHART_STYLE.background}
+                  stroke={outlierSelected ? (outlierStyle?.stroke ?? JOURNAL_CHART_STYLE.selectedStroke) : (outlierStyle?.stroke ?? color)}
+                  strokeWidth={outlierSelected ? (outlierStyle?.strokeWidth ?? 2.4) : (outlierStyle?.strokeWidth ?? 1.4)}
+                  opacity={outlierStyle?.opacity ?? (selected.size > 0 && !outlierSelected ? 0.32 : 1)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onElementToggle(outlierMeta);
+                  }}
+                />
+              );
+            })}
             <text x={cx} y={plot.y + plot.h + 20} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.mutedText}>{category}</text>
           </g>
         );

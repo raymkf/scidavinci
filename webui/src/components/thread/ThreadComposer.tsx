@@ -29,6 +29,7 @@ import { useClipboardAndDrop } from "@/hooks/useClipboardAndDrop";
 import { useChartSelection } from "@/contexts/ChartSelectionContext";
 import { useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
 import { detectColorChangeFromMessage } from "@/lib/chart-actions";
+import { chartSemanticSelectionSummary } from "@/lib/chart-semantic-selection";
 import type { OutboundMedia } from "@/lib/types";
 import type { SendImage } from "@/hooks/useNanobotStream";
 import { cn } from "@/lib/utils";
@@ -233,6 +234,35 @@ export function ThreadComposer({
 
     // Active asset context (the user's edit target)
     if (activeAsset) {
+      const chartSelectionInstructions = activeAsset.kind === "chart" && activeAsset.chartConfig
+        ? {
+            instruction:
+              "When the user asks only to select/find chart elements, return chartActions JSON with select_by_semantic_query only. Do not change colors or other styles unless the user explicitly asks for a visual style change such as red/highlight/bold. Do not invent DOM coordinates or element ids. The frontend will map your semantic plan to exact elements.",
+            examples: [
+              {
+                userIntent: "select outliers / 选中离异值",
+                actions: [{ type: "select_by_semantic_query", assetId: "active", intent: "outliers", plan: { method: "iqr_1_5_or_explicit_outliers" } }],
+              },
+              {
+                userIntent: "select outliers and make them red / 选中离异值并标红",
+                actions: [
+                  { type: "select_by_semantic_query", assetId: "active", intent: "outliers", plan: { method: "iqr_1_5_or_explicit_outliers" } },
+                  { type: "style_current_selection", style: { color: "#D55E00", stroke: "#D55E00", pointSize: 5 } },
+                ],
+                onlyWhenUserExplicitlyRequestsStyle: true,
+              },
+              {
+                userIntent: "select top 5 by value",
+                actions: [{ type: "select_by_semantic_query", assetId: "active", intent: "top_n", plan: { n: 5, valueField: "<field>" } }],
+              },
+              {
+                userIntent: "select significant upregulated volcano points",
+                actions: [{ type: "select_by_semantic_query", assetId: "active", intent: "significant", plan: { direction: "up" } }],
+              },
+            ],
+            responseShape: { chartActions: ["<one or more chart actions>"] },
+          }
+        : undefined;
       contextBlocks.push(
         `[Active Edit Target]\n${JSON.stringify({
           activeAssetId: activeAsset.id,
@@ -240,6 +270,10 @@ export function ThreadComposer({
           title: activeAsset.title,
           sourceMessageId: activeAsset.sourceMessageId,
           url: activeAsset.url,
+          chart: activeAsset.kind === "chart" && activeAsset.chartConfig
+            ? chartSemanticSelectionSummary(activeAsset.chartConfig)
+            : undefined,
+          chartSelectionInstructions,
           supportedImageActions: activeAsset.kind === "image"
             ? [
                 { type: "update_background", patch: { color: "#DDF4FF", opacity: 1 } },
@@ -298,6 +332,10 @@ export function ThreadComposer({
           "update_annotation",
           "delete_annotation",
           "create_selection_set",
+          "select_by_semantic_query",
+          "select_elements",
+          "clear_selection",
+          "style_current_selection",
           "update_export_settings",
         ],
       });

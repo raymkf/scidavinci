@@ -82,55 +82,84 @@ export function VisualWorkspaceProvider({
   children: ReactNode;
   sessionId?: string | null;
 }) {
-  const [assets, setAssets] = useState<VisualAsset[]>([]);
-  const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
-  const [anchors, setAnchors] = useState<VisualAnchor[]>([]);
-  const hydratedRef = useRef<string | null | undefined>(undefined);
+  const [assets, setAssets] = useState<VisualAsset[]>(
+    () => readPersisted(sessionId).assets,
+  );
+  const [activeAssetId, setActiveAssetId] = useState<string | null>(
+    () => readPersisted(sessionId).activeAssetId,
+  );
+  const [anchors, setAnchors] = useState<VisualAnchor[]>(
+    () => readPersisted(sessionId).anchors,
+  );
 
+  const stateRef = useRef({ assets, activeAssetId, anchors });
+  stateRef.current = { assets, activeAssetId, anchors };
+
+  // Track which session's data is currently loaded. If this diverges from
+  // sessionId the key-based remount didn't happen, so switch manually.
+  const loadedSessionRef = useRef(sessionId);
+  const sessionRef = useRef(sessionId);
+  sessionRef.current = sessionId;
+
+  // Persist on every state change, only while the loaded session matches the
+  // current session, so cross-contamination is impossible.
   useEffect(() => {
-    const prevKey = hydratedRef.current;
-    if (prevKey !== sessionId) {
-      // If there was a previous session, persist its final state before switching
-      if (prevKey) {
-        persist(prevKey, { assets, activeAssetId, anchors });
-      }
-      // Load new session state
-      const next = readPersisted(sessionId);
-      setAssets(next.assets);
-      setActiveAssetId(next.activeAssetId);
-      setAnchors(next.anchors);
-      hydratedRef.current = sessionId;
+    const sid = sessionRef.current;
+    if (sid && loadedSessionRef.current === sid) {
+      persist(sid, stateRef.current);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assets, activeAssetId, anchors]);
+
+  // Defense-in-depth: if sessionId changes but the component didn't remount
+  // (React key prop didn't trigger a fresh mount), switch sessions manually.
+  useEffect(() => {
+    if (sessionId === loadedSessionRef.current) return;
+
+    // Persist current state to the OLD session before switching.
+    if (loadedSessionRef.current) {
+      persist(loadedSessionRef.current, stateRef.current);
+    }
+
+    // Load the new session's persisted state.
+    const next = readPersisted(sessionId);
+    setAssets(next.assets);
+    setActiveAssetId(next.activeAssetId);
+    setAnchors(next.anchors);
+    loadedSessionRef.current = sessionId;
   }, [sessionId]);
 
-  // Persist on every state change
+  // Persist on unmount, only when the loaded session still matches.
   useEffect(() => {
-    if (hydratedRef.current === sessionId && sessionId) {
-      persist(sessionId, { assets, activeAssetId, anchors });
-    }
-  }, [assets, activeAssetId, anchors, sessionId]);
+    return () => {
+      const sid = sessionRef.current;
+      if (sid && loadedSessionRef.current === sid) {
+        persist(sid, stateRef.current);
+      }
+    };
+  }, []);
 
   const registerAsset = useCallback((asset: VisualAsset) => {
     setAssets((prev) => {
-      const existing = prev.find((item) => item.id === asset.id);
-      if (existing) {
-        return prev.map((item) =>
-          item.id === asset.id
+      const existingIdx = prev.findIndex((item) => item.id === asset.id);
+      if (existingIdx >= 0) {
+        const existing = prev[existingIdx];
+        const updated = {
+          ...existing,
+          ...asset,
+          // Preserve user overrides from a previous visit.
+          aspectRatio: existing.aspectRatio ?? asset.aspectRatio,
+          createdAt: existing.createdAt,
+          chartConfig: asset.chartConfig
             ? {
-                ...item,
-                ...asset,
-                chartConfig: asset.chartConfig
-                  ? {
-                      ...asset.chartConfig,
-                      aspectRatio:
-                        item.chartConfig?.aspectRatio ?? asset.chartConfig.aspectRatio,
-                    }
-                  : asset.chartConfig,
-                aspectRatio: item.aspectRatio ?? asset.aspectRatio,
+                ...asset.chartConfig,
+                aspectRatio:
+                  existing.chartConfig?.aspectRatio ?? asset.chartConfig.aspectRatio,
               }
-            : item,
-        );
+            : existing.chartConfig,
+        };
+        const next = [...prev];
+        next[existingIdx] = updated;
+        return next;
       }
       return [...prev, asset];
     });
@@ -296,8 +325,11 @@ export function VisualWorkspaceProvider({
     setAnchors([]);
   }, []);
 
+  // activeAsset: only return the asset whose id matches activeAssetId.
+  // Never fall back to assets[0]; that would silently show the wrong chart
+  // when activeAssetId is stale or from a different session.
   const activeAsset = useMemo(
-    () => assets.find((item) => item.id === activeAssetId) ?? assets[0] ?? null,
+    () => assets.find((item) => item.id === activeAssetId) ?? null,
     [activeAssetId, assets],
   );
 

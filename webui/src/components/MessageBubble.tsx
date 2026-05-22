@@ -30,6 +30,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   if (message.role === "user") {
     const images = message.images ?? [];
     const media = message.media ?? [];
+    const visibleImages = mergeImages(
+      images,
+      media.filter((item) => item.kind === "image").map(({ url, name }) => ({ url, name })),
+    );
     const hasMedia = media.length > 0;
     const hasText = message.content.trim().length > 0;
     return (
@@ -41,14 +45,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         )}
       >
         <WorkspaceImageRegistrars
-          images={[
-            ...images,
-            ...media.filter((item) => item.kind === "image").map(({ url, name }) => ({ url, name })),
-          ]}
+          images={visibleImages}
           sourceMessageId={message.id}
           assetPrefix={`message-${message.id}-user-image`}
           defaultTitle="Uploaded image"
         />
+        <MessageImages images={visibleImages} align="right" />
         {hasMedia ? (
           <MessageMedia media={media} align="right" />
         ) : null}
@@ -68,6 +70,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
   const empty = message.content.trim().length === 0;
   const media = message.media ?? [];
+  const visibleImages = mergeImages(
+    media.filter((item) => item.kind === "image").map(({ url, name }) => ({ url, name })),
+  );
   const visibleContent = stripChartActionJson(message.content);
   return (
     <div data-message-id={message.id} className={cn("w-full text-sm", baseAnim)} style={{ lineHeight: "var(--cjk-line-height)" }}>
@@ -76,11 +81,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       ) : (
         <>
           <WorkspaceImageRegistrars
-            images={media.filter((item) => item.kind === "image").map(({ url, name }) => ({ url, name }))}
+            images={visibleImages}
             sourceMessageId={message.id}
             assetPrefix={`message-${message.id}-assistant-image`}
             defaultTitle="Generated image"
           />
+          <MessageImages images={visibleImages} align="left" />
           {visibleContent.trim().length > 0 ? (
             <MarkdownText sourceId={message.id}>{visibleContent}</MarkdownText>
           ) : !message.isStreaming ? (
@@ -92,6 +98,62 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           ) : null}
         </>
       )}
+    </div>
+  );
+}
+
+function mergeImages(...groups: UIImage[][]): UIImage[] {
+  const seen = new Set<string>();
+  const merged: UIImage[] = [];
+  for (const image of groups.flat()) {
+    const key = image.url ?? image.name ?? "";
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(image);
+  }
+  return merged;
+}
+
+function MessageImages({
+  images,
+  align,
+}: {
+  images: UIImage[];
+  align: "left" | "right";
+}) {
+  if (images.length === 0) return null;
+  return (
+    <div
+      className={cn(
+        "mt-2 grid max-w-[min(100%,34rem)] gap-2",
+        images.length === 1 ? "grid-cols-1" : "grid-cols-2",
+        align === "right" ? "justify-items-end" : "justify-items-start",
+      )}
+    >
+      {images.map((image, index) => (
+        <figure
+          key={`${image.url ?? image.name ?? "image"}-${index}`}
+          className="max-w-full overflow-hidden rounded-[14px] border border-border/60 bg-muted/30"
+        >
+          {image.url ? (
+            <img
+              src={image.url}
+              alt={image.name ?? "Image attachment"}
+              className="block max-h-[28rem] w-full object-contain"
+              loading="lazy"
+            />
+          ) : (
+            <div className="grid min-h-28 min-w-40 place-items-center px-4 text-xs text-muted-foreground">
+              {image.name ?? "Image attachment"}
+            </div>
+          )}
+          {image.name ? (
+            <figcaption className="truncate px-3 py-1.5 text-[11.5px] text-muted-foreground">
+              {image.name}
+            </figcaption>
+          ) : null}
+        </figure>
+      ))}
     </div>
   );
 }

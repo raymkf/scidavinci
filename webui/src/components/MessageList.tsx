@@ -30,7 +30,7 @@ export function MessageList({ messages, isStreaming }: MessageListProps) {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({
-      top: el.scrollHeight,
+      top: Math.max(0, el.scrollHeight - el.clientHeight),
       behavior: smooth ? "smooth" : "auto",
     });
   }, []);

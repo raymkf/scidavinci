@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type {
   AnnotationSpec,
@@ -146,6 +146,29 @@ function persistState(
   }
 }
 
+function mergeSelection(
+  current: SelectedChartElement[],
+  incoming: SelectedChartElement[],
+  mode: "replace" | "add" | "toggle",
+): SelectedChartElement[] {
+  if (mode === "add") {
+    const existing = new Set(current.map((item) => item.elementId));
+    return [...current, ...incoming.filter((item) => !existing.has(item.elementId))];
+  }
+  if (mode === "toggle") {
+    const toggled = new Map(current.map((item) => [item.elementId, item]));
+    for (const item of incoming) {
+      if (toggled.has(item.elementId)) {
+        toggled.delete(item.elementId);
+      } else {
+        toggled.set(item.elementId, item);
+      }
+    }
+    return Array.from(toggled.values());
+  }
+  return incoming;
+}
+
 export function ChartSelectionProvider({
   children,
   persistenceKey,
@@ -153,37 +176,75 @@ export function ChartSelectionProvider({
   children: ReactNode;
   persistenceKey?: string | null;
 }) {
-  const persisted = useMemo(() => readPersistedState(persistenceKey), [persistenceKey]);
   const [selected, setSelected] = useState<SelectedChartElement[]>([]);
   const [elementStyles, setElementStyles] = useState<Map<string, ElementStyle>>(
-    () => persisted.styles,
+    () => readPersistedState(persistenceKey).styles,
   );
-  const [selectionSets, setSelectionSets] = useState<SelectionSet[]>(() => persisted.selectionSets);
-  const [annotations, setAnnotations] = useState<AnnotationSpec[]>(() => persisted.annotations);
-  const [figureOverrides, setFigureOverrides] = useState<FigureInteractionOverrides>(() => persisted.figureOverrides);
+  const [selectionSets, setSelectionSets] = useState<SelectionSet[]>(
+    () => readPersistedState(persistenceKey).selectionSets,
+  );
+  const [annotations, setAnnotations] = useState<AnnotationSpec[]>(
+    () => readPersistedState(persistenceKey).annotations,
+  );
+  const [figureOverrides, setFigureOverrides] = useState<FigureInteractionOverrides>(
+    () => readPersistedState(persistenceKey).figureOverrides,
+  );
   const [activeFigureObject, setActiveFigureObject] = useState<FigureObjectRef | null>(null);
   const [lastActionResults, setLastActionResults] = useState<ActionResult[]>([]);
 
   const dismissActionResults = useCallback(() => setLastActionResults([]), []);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
 
+  const stateRef = useRef({ styles: elementStyles, selectionSets, annotations, figureOverrides });
+  stateRef.current = { styles: elementStyles, selectionSets, annotations, figureOverrides };
+
+  // Track which persistence key's data is currently loaded. If this diverges
+  // from persistenceKey the key-based remount didn't happen.
+  const loadedKeyRef = useRef(persistenceKey);
+  const keyRef = useRef(persistenceKey);
+  keyRef.current = persistenceKey;
+
+  // Persist on every state change, only while the loaded key matches the
+  // current key, so cross-contamination is impossible.
   useEffect(() => {
+    const key = keyRef.current;
+    if (key && loadedKeyRef.current === key) {
+      persistState(key, { styles: elementStyles, selectionSets, annotations, figureOverrides });
+    }
+  }, [annotations, elementStyles, figureOverrides, selectionSets]);
+
+  // Defense-in-depth: if persistenceKey changes but the component didn't
+  // remount (React key prop didn't trigger a fresh mount), switch manually.
+  useEffect(() => {
+    if (persistenceKey === loadedKeyRef.current) return;
+
+    // Persist current state to the OLD key before switching.
+    if (loadedKeyRef.current) {
+      persistState(loadedKeyRef.current, stateRef.current);
+    }
+
+    // Load the new key's persisted state.
     const next = readPersistedState(persistenceKey);
-    setSelected([]);
     setElementStyles(next.styles);
     setSelectionSets(next.selectionSets);
     setAnnotations(next.annotations);
     setFigureOverrides(next.figureOverrides);
+    setSelected([]);
     setActiveFigureObject(null);
+    setLastActionResults([]);
+    loadedKeyRef.current = persistenceKey;
   }, [persistenceKey]);
 
+  // Persist on unmount, only when the loaded key still matches.
   useEffect(() => {
-    persistState(persistenceKey, {
-      styles: elementStyles,
-      selectionSets,
-      annotations,
-      figureOverrides,
-    });
-  }, [annotations, elementStyles, figureOverrides, persistenceKey, selectionSets]);
+    return () => {
+      const key = keyRef.current;
+      if (key && loadedKeyRef.current === key) {
+        persistState(key, stateRef.current);
+      }
+    };
+  }, []);
 
   const toggleElement = useCallback((meta: ChartElementMetadata) => {
     setActiveFigureObject({ kind: "mark", id: meta.elementId });
@@ -226,10 +287,42 @@ export function ChartSelectionProvider({
   const applyActions = useCallback((actions: ChartAction[]) => {
     const results: ActionResult[] = [];
     const now = Date.now();
+    let workingSelection = selectedRef.current;
+    const expandedActions: ChartAction[] = [];
+    let implicitSelectionStarted = false;
+
+    for (const action of actions) {
+      if (action.type === "select_elements") {
+        const incoming = (action.elements ?? action.targetElementIds?.map((elementId) => ({
+          elementId,
+          chartType: "bar" as const,
+          series: "",
+          category: "",
+          value: 0,
+          label: elementId,
+        })) ?? []);
+        const mode = action.mode ?? (implicitSelectionStarted ? "add" : "replace");
+        workingSelection = mergeSelection(workingSelection, incoming, mode);
+        implicitSelectionStarted = true;
+        expandedActions.push(action);
+      } else if (action.type === "clear_selection") {
+        workingSelection = [];
+        implicitSelectionStarted = false;
+        expandedActions.push(action);
+      } else if (action.type === "style_current_selection") {
+        expandedActions.push({
+          type: "update_element_style",
+          targetElementIds: workingSelection.map((item) => item.elementId),
+          style: action.style,
+        });
+      } else {
+        expandedActions.push(action);
+      }
+    }
 
     setElementStyles((prev) => {
       const next = new Map(prev);
-      for (const action of actions) {
+      for (const action of expandedActions) {
         if ((action.type === "update_element_style" || action.type === "style_by_ids") && action.style) {
           for (const id of action.targetElementIds) {
             const existing = next.get(id) ?? {};
@@ -256,9 +349,41 @@ export function ChartSelectionProvider({
       }
       return next;
     });
+    setSelected((prev) => {
+      let next = prev;
+      let implicitSelectionStarted = false;
+      for (const action of expandedActions) {
+        if (action.type === "clear_selection") {
+          next = [];
+          implicitSelectionStarted = false;
+          continue;
+        }
+        if (action.type !== "select_elements") continue;
+        const incoming = (action.elements ?? action.targetElementIds?.map((elementId) => ({
+          elementId,
+          chartType: "bar" as const,
+          series: "",
+          category: "",
+          value: 0,
+          label: elementId,
+        })) ?? []);
+        const mode = action.mode ?? (implicitSelectionStarted ? "add" : "replace");
+        next = mergeSelection(next, incoming, mode);
+        implicitSelectionStarted = true;
+      }
+      return next;
+    });
+    for (const action of expandedActions) {
+      if (action.type === "clear_selection") {
+        setActiveFigureObject(null);
+      } else if (action.type === "select_elements") {
+        const firstId = action.elements?.[0]?.elementId ?? action.targetElementIds?.[0];
+        setActiveFigureObject(firstId ? { kind: "mark", id: firstId } : null);
+      }
+    }
     setSelectionSets((prev) => {
       let next = prev;
-      for (const action of actions) {
+      for (const action of expandedActions) {
         if (action.type !== "create_selection_set") continue;
         const set: SelectionSet = {
           id: `selection-${Date.now()}-${next.length + 1}`,
@@ -273,7 +398,7 @@ export function ChartSelectionProvider({
     });
     setAnnotations((prev) => {
       let next = prev;
-      for (const action of actions) {
+      for (const action of expandedActions) {
         if (action.type !== "add_annotation") continue;
         const id = action.annotation?.id ?? `annotation-${Date.now()}-${next.length + 1}`;
         next = [
@@ -291,7 +416,7 @@ export function ChartSelectionProvider({
           },
         ];
       }
-      for (const action of actions) {
+      for (const action of expandedActions) {
         if (action.type === "update_annotation") {
           next = next.map((annotation) =>
             annotation.id === action.annotationId
@@ -306,7 +431,7 @@ export function ChartSelectionProvider({
     });
     setFigureOverrides((prev) => {
       let next = prev;
-      for (const action of actions) {
+      for (const action of expandedActions) {
         if (action.type === "update_axis") {
           next = {
             ...next,
@@ -348,10 +473,11 @@ export function ChartSelectionProvider({
     });
 
     // Record results for each action applied
-    for (const action of actions) {
+    for (const action of expandedActions) {
       const actionType = action.type;
       const hasTarget =
         (actionType === "style_by_ids" || actionType === "update_element_style") ? (action.targetElementIds?.length ?? 0) > 0
+        : actionType === "select_elements" ? ((action.elements?.length ?? action.targetElementIds?.length ?? 0) > 0)
         : actionType === "add_annotation" ? true
         : actionType === "update_annotation" ? !!action.annotationId
         : actionType === "delete_annotation" ? !!action.annotationId

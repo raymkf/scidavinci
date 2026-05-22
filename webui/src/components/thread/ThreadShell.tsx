@@ -12,6 +12,7 @@ import { VisualWorkspaceProvider, useVisualWorkspace } from "@/contexts/VisualWo
 import { useNanobotStream } from "@/hooks/useNanobotStream";
 import { useSessionHistory } from "@/hooks/useSessions";
 import { parseChartActionsFromContent } from "@/lib/chart-actions";
+import { resolveSemanticSelectionAction } from "@/lib/chart-semantic-selection";
 import type { ChatSummary, UIMessage } from "@/lib/types";
 import { useClient } from "@/providers/ClientProvider";
 
@@ -37,14 +38,19 @@ function ChartActionWatcher({ messages }: { messages: UIMessage[] }) {
       if (msg.role !== "assistant" || appliedRef.current.has(msg.id)) continue;
       const actions = parseChartActionsFromContent(msg.content);
       if (actions.length > 0) {
+        const resolvedActions = actions.flatMap((action) => {
+          if (action.type !== "select_by_semantic_query") return [action];
+          const resolved = resolveSemanticSelectionAction(action, activeAsset);
+          return resolved ? [resolved] : [];
+        });
         if (activeAsset?.kind === "image") {
-          actions.forEach((action) => {
+          resolvedActions.forEach((action) => {
             if (action.type === "update_background") {
               updateAssetBackground(activeAsset.id, action.patch);
             }
           });
         }
-        applyActions(actions);
+        applyActions(resolvedActions);
         appliedRef.current.add(msg.id);
       }
     }
@@ -78,18 +84,34 @@ export function ThreadShell({
   const pendingFirstRef = useRef<string | null>(null);
   const messageCacheRef = useRef<Map<string, UIMessage[]>>(new Map());
 
+  // Track chat switches. prevChatRef is updated during render so we can
+  // detect the switch and override messages before stale InteractiveChart
+  // components register assets into freshly-mounted providers.
+  // prevCommittedChatRef is updated in the caching effect to avoid writing
+  // old-session messages under the new chatId key.
+  const prevChatRef = useRef(chatId);
+  const prevCommittedChatRef = useRef(chatId);
+
   const initial = useMemo(() => {
     if (!chatId) return historical;
     return messageCacheRef.current.get(chatId) ?? historical;
   }, [chatId, historical]);
   const {
-    messages,
+    messages: streamMessages,
     isStreaming,
     send,
     setMessages,
     streamError,
     dismissStreamError,
   } = useNanobotStream(chatId, initial);
+
+  // When chatId changes during render, use initial (new session's msgs)
+  // instead of streamMessages (still the old session's). This prevents
+  // stale InteractiveChart components from the previous session from
+  // registering their assets into the new session's providers.
+  const switching = chatId !== prevChatRef.current;
+  prevChatRef.current = chatId;
+  const messages = switching ? initial : streamMessages;
   const showHeroComposer = messages.length === 0 && !loading;
   const pendingAsk = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -124,8 +146,18 @@ export function ThreadShell({
 
   useEffect(() => {
     if (!chatId) return;
-    messageCacheRef.current.set(chatId, messages);
-  }, [chatId, messages]);
+    // When switching chats, first persist the old chat's messages under
+    // its own key, then skip the write; streamMessages still belongs to
+  // the previous chat until useNanobotStream resets it.
+    if (prevCommittedChatRef.current !== chatId) {
+      if (prevCommittedChatRef.current) {
+        messageCacheRef.current.set(prevCommittedChatRef.current, streamMessages);
+      }
+      prevCommittedChatRef.current = chatId;
+      return;
+    }
+    messageCacheRef.current.set(chatId, streamMessages);
+  }, [chatId, streamMessages]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -244,7 +276,7 @@ export function ThreadShell({
               }
             />
           </div>
-          {chatId ? <VisualWorkspacePanel /> : null}
+          {chatId ? <VisualWorkspacePanel key={chatId} /> : null}
         </section>
       </VisualWorkspaceProvider>
     </ChartSelectionProvider>
