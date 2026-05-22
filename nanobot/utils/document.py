@@ -212,6 +212,7 @@ def _is_text_extension(ext: str) -> bool:
         ".txt",
         ".md",
         ".csv",
+        ".tsv",
         ".json",
         ".xml",
         ".html",
@@ -226,6 +227,18 @@ def _is_text_extension(ext: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Spreadsheet detection
+# ---------------------------------------------------------------------------
+
+_SPREADSHEET_EXTENSIONS: frozenset[str] = frozenset({".csv", ".tsv", ".xlsx"})
+
+
+def is_spreadsheet(path: str | Path) -> bool:
+    """Return True when *path* is a recognised spreadsheet file."""
+    return Path(path).suffix.lower() in _SPREADSHEET_EXTENSIONS
+
+
+# ---------------------------------------------------------------------------
 # High-level helper: split media into images + extracted document text
 # ---------------------------------------------------------------------------
 
@@ -237,6 +250,7 @@ def extract_documents(
     media_paths: list[str],
     *,
     max_file_size: int = _MAX_EXTRACT_FILE_SIZE,
+    inline_spreadsheets: bool = False,
 ) -> tuple[str, list[str]]:
     """Separate images from documents in *media_paths*.
 
@@ -245,8 +259,20 @@ def extract_documents(
     returned list so that downstream layers only need to handle vision
     blocks.
 
+    Spreadsheet files (CSV/TSV/XLSX) are treated specially: when
+    *inline_spreadsheets* is False (the default) their text is NOT
+    extracted — callers can detect them via :func:`is_spreadsheet` and
+    use the dataset profile / tool path instead.  Set
+    *inline_spreadsheets* to True for the legacy behaviour where
+    spreadsheet content is inlined as text (truncated at
+    ``_MAX_TEXT_LENGTH``).
+
     Files larger than *max_file_size* bytes are skipped with a warning
     to avoid unbounded memory / CPU usage.
+
+    Returns ``(text, image_paths)`` — spreadsheet paths are intentionally
+    absent from both, since images maps to vision blocks and non-spreadsheet
+    documents have already been folded into *text*.
     """
     image_paths: list[str] = []
     doc_texts: list[str] = []
@@ -272,6 +298,9 @@ def extract_documents(
         mime = detect_image_mime(header) or mimetypes.guess_type(path_str)[0]
         if mime and mime.startswith("image/"):
             image_paths.append(path_str)
+        elif is_spreadsheet(p) and not inline_spreadsheets:
+            # Dataset path — skip text extraction; caller handles profiling.
+            continue
         else:
             extracted = extract_text(p)
             if extracted and not extracted.startswith("[error:"):

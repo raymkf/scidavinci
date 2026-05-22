@@ -44,7 +44,7 @@ from nanobot.config.schema import AgentDefaults
 from nanobot.providers.base import LLMProvider
 from nanobot.providers.factory import ProviderSnapshot
 from nanobot.session.manager import Session, SessionManager
-from nanobot.utils.document import extract_documents
+from nanobot.utils.document import extract_documents, is_spreadsheet
 from nanobot.utils.helpers import image_placeholder_text
 from nanobot.utils.helpers import truncate_text as truncate_text_fn
 from nanobot.utils.progress_events import (
@@ -238,6 +238,7 @@ class AgentLoop:
         self.provider_retry_mode = provider_retry_mode
         self.web_config = web_config or WebToolsConfig()
         self.exec_config = exec_config or ExecToolConfig()
+        self.datasets_config = _tc.datasets
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
         self._start_time = time.time()
@@ -299,6 +300,8 @@ class AgentLoop:
             provider=provider,
             model=self.model,
         )
+        from nanobot.agent.dataset.registry import DatasetRegistry
+        self.dataset_registry = DatasetRegistry(self.datasets_config)
         self._register_default_tools()
         if _tc.my.enable:
             self.tools.register(MyTool(loop=self, modify_allowed=_tc.my.allow_set))
@@ -386,6 +389,17 @@ class AgentLoop:
             self.tools.register(
                 CronTool(self.cron_service, default_timezone=self.context.timezone or "UTC")
             )
+        if self.datasets_config.enabled:
+            from nanobot.agent.tools.dataset import (
+                InspectDatasetTool,
+                ListDatasetsTool,
+                PlotDatasetTool,
+                QueryDatasetTool,
+            )
+            self.tools.register(ListDatasetsTool(registry=self.dataset_registry))
+            self.tools.register(InspectDatasetTool(registry=self.dataset_registry))
+            self.tools.register(QueryDatasetTool(registry=self.dataset_registry))
+            self.tools.register(PlotDatasetTool(registry=self.dataset_registry))
 
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
@@ -951,7 +965,38 @@ class AgentLoop:
         # Extract document text from media at the processing boundary so all
         # channels benefit without format-specific logic in ContextBuilder.
         if msg.media:
-            new_content, image_only = extract_documents(msg.content, msg.media)
+            inline = self.datasets_config.inline_spreadsheets
+            new_content, image_only = extract_documents(
+                msg.content, msg.media, inline_spreadsheets=inline,
+            )
+            if self.datasets_config.enabled and not inline:
+                from nanobot.agent.dataset.profile import generate_profile, profile_to_llm_text
+                profile_blocks: list[str] = []
+                for path_str in msg.media:
+                    p = Path(path_str)
+                    if not p.is_file():
+                        continue
+                    if is_spreadsheet(p):
+                        try:
+                            profile = generate_profile(
+                                p, max_sample_rows=self.datasets_config.max_profile_rows,
+                            )
+                            did = self.dataset_registry.register(p, profile)
+                            profile_blocks.append(profile_to_llm_text(profile))
+                        except Exception as exc:
+                            logger.error("Failed to profile dataset {}: {}", p, exc)
+                            profile_blocks.append(
+                                f"[Uploaded Dataset]\ndataset_id: (error)\n"
+                                f"file: {p.name}\n"
+                                f"error: failed to generate profile: {exc}\n"
+                            )
+                if profile_blocks:
+                    hint = (
+                        "\nUse list_datasets, inspect_dataset, query_dataset, and "
+                        "plot_dataset tools to work with this data. "
+                        "Do not assume the full table is in context.\n"
+                    )
+                    new_content = new_content + "\n\n[Uploaded Datasets]\n" + "\n\n".join(profile_blocks) + hint
             msg = dataclasses.replace(msg, content=new_content, media=image_only)
 
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
@@ -959,6 +1004,12 @@ class AgentLoop:
 
         key = session_key or msg.session_key
         session = self.sessions.get_or_create(key)
+        # Rehydrate dataset registry from session metadata (survives restarts)
+        if self.datasets_config.enabled and "datasets" in session.metadata:
+            try:
+                self.dataset_registry.from_metadata(session.metadata["datasets"])
+            except Exception as e:
+                logger.warning("Failed to restore dataset registry: {}", e)
         if self._restore_runtime_checkpoint(session):
             self.sessions.save(session)
         if self._restore_pending_user_turn(session):
@@ -1081,6 +1132,9 @@ class AgentLoop:
         session.enforce_file_cap(on_archive=self.context.memory.raw_archive)
         self._clear_pending_user_turn(session)
         self._clear_runtime_checkpoint(session)
+        # Persist dataset registry state so it survives restarts
+        if self.datasets_config.enabled and self.dataset_registry.list_ids():
+            session.metadata["datasets"] = self.dataset_registry.to_metadata()
         self.sessions.save(session)
         self._schedule_background(self.consolidator.maybe_consolidate_by_tokens(session))
 

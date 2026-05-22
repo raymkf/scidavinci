@@ -234,12 +234,34 @@ class MyToolConfig(Base):
     allow_set: bool = False  # let `my` modify loop state (read-only if False)
 
 
+class DatasetsConfig(Base):
+    """Dataset tools configuration.
+
+    When *enabled* is True, spreadsheet uploads (CSV/TSV/XLSX) are registered
+    as datasets instead of being inlined as text.  The model receives a compact
+    profile and uses the dataset tools to inspect, query, and plot data on
+    demand.
+
+    Set *inline_spreadsheets* to True to restore the legacy behaviour where
+    spreadsheet content was extracted as text (truncated at ~200K chars) and
+    appended to the user message.
+    """
+
+    enabled: bool = True
+    inline_spreadsheets: bool = False
+    max_query_rows: int = Field(default=1000, ge=1, le=5000)
+    max_query_chars: int = Field(default=32000, ge=1000, le=200_000)
+    query_timeout_s: int = Field(default=30, ge=1, le=120)
+    max_profile_rows: int = Field(default=5, ge=1, le=20)
+
+
 class ToolsConfig(Base):
     """Tools configuration."""
 
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
     my: MyToolConfig = Field(default_factory=MyToolConfig)
+    datasets: DatasetsConfig = Field(default_factory=DatasetsConfig)
     restrict_to_workspace: bool = False  # restrict all tool access to workspace directory
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     ssrf_whitelist: list[str] = Field(default_factory=list)  # CIDR ranges to exempt from SSRF blocking (e.g. ["100.64.0.0/10"] for Tailscale)
