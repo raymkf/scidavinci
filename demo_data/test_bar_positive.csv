@@ -1,0 +1,13 @@
+sample,group,expression
+S1,Control,12.4
+S2,Control,14.1
+S3,Control,13.5
+S4,Treatment A,22.8
+S5,Treatment A,24.2
+S6,Treatment A,23.6
+S7,Treatment B,31.5
+S8,Treatment B,29.9
+S9,Treatment B,32.4
+S10,Treatment C,18.7
+S11,Treatment C,19.3
+S12,Treatment C,20.1

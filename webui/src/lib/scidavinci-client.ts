@@ -26,9 +26,23 @@ export type StreamError =
   /** Server rejected the inbound frame as too large (WS close code 1009).
    * Typically means the user attached images whose base64 size exceeded
    * ``maxMessageBytes`` on the server. */
-  | { kind: "message_too_big" };
+  | { kind: "message_too_big" }
+  /** Server rejected a syntactically valid message envelope before it reached
+   * the agent, usually because an attachment could not be decoded or failed
+   * the server-side MIME / size guard. */
+  | {
+      kind: "message_rejected";
+      detail?: string;
+      reason?: string;
+      outboundMedia?: Array<{ mime: string; name?: string }>;
+    };
 
 type ErrorHandler = (error: StreamError) => void;
+
+function dataUrlMime(dataUrl: string): string | null {
+  const match = /^data:([^;,]+)(?:;[^,]*)*;base64,/i.exec(dataUrl);
+  return match?.[1]?.toLowerCase() ?? null;
+}
 
 interface PendingNewChat {
   resolve: (chatId: string) => void;
@@ -73,6 +87,7 @@ export class SciDaVinciClient {
   private currentUrl: string;
   private status_: ConnectionStatus = "idle";
   private readyChatId: string | null = null;
+  private lastOutboundMedia: Array<{ mime: string; name?: string }> | undefined;
   // Set by ``close()`` so the onclose handler knows the drop was intentional
   // and must not schedule a reconnect or flip status back to "reconnecting".
   private intentionallyClosed = false;
@@ -183,6 +198,10 @@ export class SciDaVinciClient {
 
   sendMessage(chatId: string, content: string, media?: OutboundMedia[]): void {
     this.knownChats.add(chatId);
+    this.lastOutboundMedia = media?.map((m) => ({
+      mime: dataUrlMime(m.data_url) ?? "unknown",
+      name: m.name,
+    }));
     const frame: Outbound =
       media && media.length > 0
         ? { type: "message", chat_id: chatId, content, media }
@@ -233,6 +252,15 @@ export class SciDaVinciClient {
       }
       this.dispatch(parsed.chat_id, parsed);
       return;
+    }
+
+    if (parsed.event === "error") {
+      this.emitError({
+        kind: "message_rejected",
+        detail: parsed.detail,
+        reason: (parsed as { reason?: string }).reason,
+        outboundMedia: this.lastOutboundMedia,
+      });
     }
 
     const chatId = (parsed as { chat_id?: string }).chat_id;

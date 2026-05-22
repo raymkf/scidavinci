@@ -107,6 +107,10 @@
     "messageTooBig": {
       "title": "Tin nhắn quá lớn",
       "body": "Máy chủ đã từ chối tin nhắn trước vì vượt quá giới hạn kích thước. Hãy bớt ảnh hoặc chọn tệp nhỏ hơn rồi thử lại."
+    },
+    "messageRejected": {
+      "title": "Tin nhắn chưa được gửi",
+      "body": "Máy chủ đã từ chối tệp đính kèm trước khi tới trợ lý. Hãy thử lưu tệp dưới dạng CSV hoặc dùng tệp nhỏ hơn."
     }
   }
 }

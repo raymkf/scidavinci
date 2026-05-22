@@ -199,6 +199,9 @@ export function useScidavinciStream(
       // for the model (may include structured context like [Selected Chart Elements]).
       const bubbleText = displayContent ?? content;
       const previews = hasImages ? images!.map((i) => i.preview) : undefined;
+      const documentPreviews = hasDocuments
+        ? documents!.map((d) => toMediaAttachment({ url: d.data_url, name: d.name }))
+        : undefined;
       setMessages((prev) => [
         ...prev,
         {
@@ -207,6 +210,7 @@ export function useScidavinciStream(
           content: bubbleText,
           createdAt: Date.now(),
           ...(previews ? { images: previews } : {}),
+          ...(documentPreviews ? { media: documentPreviews } : {}),
         },
       ]);
       const wireMedia: OutboundMedia[] = [

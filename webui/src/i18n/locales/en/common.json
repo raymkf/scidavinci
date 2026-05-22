@@ -107,6 +107,10 @@
     "messageTooBig": {
       "title": "Message too large",
       "body": "The server rejected your last message because it exceeded the size limit. Remove some images or try smaller files, then send again."
+    },
+    "messageRejected": {
+      "title": "Message was not sent",
+      "body": "The server rejected the attachment before it reached the assistant. Try saving the file as CSV or using a smaller file."
     }
   }
 }

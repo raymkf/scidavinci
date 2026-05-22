@@ -1,0 +1,11 @@
+gene,condition,expression,log2_fold_change,p_value
+TP53,control,12.4,0.0,0.92
+TP53,treatment,28.7,1.21,0.004
+BRCA1,control,8.9,0.0,0.88
+BRCA1,treatment,19.6,1.14,0.011
+EGFR,control,15.2,0.0,0.76
+EGFR,treatment,34.1,1.17,0.007
+MYC,control,21.5,0.0,0.81
+MYC,treatment,45.8,1.09,0.018
+GAPDH,control,50.2,0.0,0.95
+GAPDH,treatment,51.7,0.04,0.67

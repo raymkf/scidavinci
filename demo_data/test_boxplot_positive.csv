@@ -1,0 +1,5 @@
+group,min,q1,median,q3,max,outliers
+Control,8.2,10.4,12.1,13.8,16.5,""
+Treatment A,14.6,17.2,19.4,21.8,25.1,""
+Treatment B,20.3,24.7,27.9,31.2,35.6,""
+Treatment C,11.5,13.9,15.6,18.2,22.4,"24.8"

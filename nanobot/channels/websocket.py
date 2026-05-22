@@ -269,7 +269,18 @@ _DOCUMENT_MIME_ALLOWED: frozenset[str] = frozenset({
 
 _UPLOAD_MIME_ALLOWED: frozenset[str] = _IMAGE_MIME_ALLOWED | _VIDEO_MIME_ALLOWED | _DOCUMENT_MIME_ALLOWED
 
-_DATA_URL_MIME_RE = re.compile(r"^data:([^;]+);base64,", re.DOTALL)
+_DOCUMENT_EXT_ALLOWED: frozenset[str] = frozenset({
+    ".csv",
+    ".tsv",
+    ".xlsx",
+    ".xls",
+    ".ods",
+    ".json",
+    ".pdf",
+    ".txt",
+})
+
+_DATA_URL_MIME_RE = re.compile(r"^data:([^;,]+)(?:;[^,]*)*;base64,", re.DOTALL | re.IGNORECASE)
 
 
 def _extract_data_url_mime(url: str) -> str | None:
@@ -280,6 +291,22 @@ def _extract_data_url_mime(url: str) -> str | None:
     if not m:
         return None
     return m.group(1).strip().lower() or None
+
+
+def _looks_like_document_upload(mime: str | None, name: str | None) -> bool:
+    """Return True for document uploads accepted by MIME or safe extension.
+
+    Browsers are inconsistent for CSV files: depending on OS/browser, a
+    perfectly valid ``.csv`` can arrive as ``application/octet-stream`` or
+    another generic MIME.  The frontend already preserves the original file
+    name, so use its extension as a secondary signal for document formats the
+    agent can read directly.
+    """
+    if mime in _DOCUMENT_MIME_ALLOWED:
+        return True
+    if not name:
+        return False
+    return Path(safe_filename(name)).suffix.lower() in _DOCUMENT_EXT_ALLOWED
 
 
 _LOCALHOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
@@ -1096,11 +1123,12 @@ class WebSocketChannel(BaseChannel):
         document_count = 0
         for item in media:
             mime = _extract_data_url_mime(item.get("data_url", "")) if isinstance(item, dict) else None
+            name = item.get("name") if isinstance(item, dict) and isinstance(item.get("name"), str) else None
             if mime in _VIDEO_MIME_ALLOWED:
                 video_count += 1
             elif mime in _IMAGE_MIME_ALLOWED:
                 image_count += 1
-            elif mime in _DOCUMENT_MIME_ALLOWED:
+            elif _looks_like_document_upload(mime, name):
                 document_count += 1
         if image_count > _MAX_IMAGES_PER_MESSAGE:
             return [], "too_many_images"
@@ -1131,13 +1159,19 @@ class WebSocketChannel(BaseChannel):
             mime = _extract_data_url_mime(data_url)
             if mime is None:
                 return _abort("decode")
-            if mime not in _UPLOAD_MIME_ALLOWED:
-                return _abort("mime")
+            name = item.get("name") if isinstance(item.get("name"), str) else None
+            is_document = _looks_like_document_upload(mime, name)
+            if mime not in _UPLOAD_MIME_ALLOWED and not is_document:
+                suffix = Path(safe_filename(name)).suffix.lower() if name else ""
+                return _abort(f"mime:{mime or 'unknown'}:{suffix or 'no_ext'}")
             is_video = mime in _VIDEO_MIME_ALLOWED
-            max_bytes = _MAX_VIDEO_BYTES if is_video else (_MAX_DOCUMENT_BYTES if mime in _DOCUMENT_MIME_ALLOWED else _MAX_IMAGE_BYTES)
+            max_bytes = _MAX_VIDEO_BYTES if is_video else (_MAX_DOCUMENT_BYTES if is_document else _MAX_IMAGE_BYTES)
             try:
                 saved = save_base64_data_url(
-                    data_url, media_dir, max_bytes=max_bytes,
+                    data_url,
+                    media_dir,
+                    max_bytes=max_bytes,
+                    filename=name,
                 )
             except FileSizeExceeded:
                 return _abort("size")

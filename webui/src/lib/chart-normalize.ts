@@ -68,6 +68,19 @@ function normalizeSparseOneBarSeries(config: ChartConfig): ChartConfig {
   };
 }
 
+function toText(value: unknown): string | undefined {
+  let current = value;
+  while (current) {
+    if (typeof current === "string") return current;
+    if (typeof current === "object") {
+      current = (current as Record<string, unknown>).text;
+    } else {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 export function normalizeChartConfig(config: ChartConfig): ChartConfig {
   const normalized = normalizeSparseOneBarSeries(config);
   return {
@@ -141,14 +154,14 @@ export function normalizeFigureModel(config: ChartConfig): FigureModel {
     },
     title: {
       id: "title",
-      text: config.title,
+      text: toText(config.title),
       visible: Boolean(config.title),
       position: "top",
       ...(existing?.title ?? {}),
     },
     caption: {
       id: "caption",
-      text: config.caption ?? config.description,
+      text: toText(config.caption) ?? toText(config.description),
       visible: Boolean(config.caption || config.description),
       position: "bottom",
       ...(existing?.caption ?? {}),
@@ -157,14 +170,14 @@ export function normalizeFigureModel(config: ChartConfig): FigureModel {
       x: {
         id: "axis.x",
         channel: "x",
-        title: config.xLabel ?? config.xField,
+        title: toText(config.xLabel) ?? config.xField,
         visible: config.type !== "pie",
         ...(existing?.axes?.x ?? {}),
       },
       y: {
         id: "axis.y",
         channel: "y",
-        title: config.yLabel ?? (config.unit ? `Value (${config.unit})` : undefined),
+        title: toText(config.yLabel) ?? (config.unit ? `Value (${toText(config.unit) ?? config.unit})` : undefined),
         visible: config.type !== "pie",
         ...(existing?.axes?.y ?? {}),
       },

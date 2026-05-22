@@ -9,11 +9,12 @@ import { ThreadViewport } from "@/components/thread/ThreadViewport";
 import { VisualWorkspacePanel } from "@/components/VisualWorkspacePanel";
 import { ChartSelectionProvider, useChartSelection } from "@/contexts/ChartSelectionContext";
 import { VisualWorkspaceProvider, useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
-import { useScidavinciStream } from "@/hooks/useScidavinciStream";
+import { useScidavinciStream, type SendImage } from "@/hooks/useScidavinciStream";
 import { useSessionHistory } from "@/hooks/useSessions";
 import { parseChartActionsFromContent } from "@/lib/chart-actions";
 import { resolveSemanticSelectionAction } from "@/lib/chart-semantic-selection";
-import type { ChatSummary, UIMessage } from "@/lib/types";
+import { toMediaAttachment } from "@/lib/media";
+import type { ChatSummary, OutboundMedia, UIMessage } from "@/lib/types";
 import { useClient } from "@/providers/ClientProvider";
 
 interface ThreadShellProps {
@@ -23,6 +24,13 @@ interface ThreadShellProps {
   onGoHome: () => void;
   onNewChat: () => Promise<string | null>;
   hideSidebarToggleOnDesktop?: boolean;
+}
+
+interface PendingFirstMessage {
+  content: string;
+  images?: SendImage[];
+  documents?: OutboundMedia[];
+  displayContent?: string;
 }
 
 /**
@@ -81,7 +89,7 @@ export function ThreadShell({
   const { messages: historical, loading } = useSessionHistory(historyKey);
   const { client, modelName } = useClient();
   const [booting, setBooting] = useState(false);
-  const pendingFirstRef = useRef<string | null>(null);
+  const pendingFirstRef = useRef<PendingFirstMessage | null>(null);
   const messageCacheRef = useRef<Map<string, UIMessage[]>>(new Map());
 
   // Track chat switches. prevChatRef is updated during render so we can
@@ -164,24 +172,39 @@ export function ThreadShell({
     const pending = pendingFirstRef.current;
     if (!pending) return;
     pendingFirstRef.current = null;
-    client.sendMessage(chatId, pending);
+    const wireMedia: OutboundMedia[] = [
+      ...(pending.images ? pending.images.map((i) => i.media) : []),
+      ...(pending.documents ?? []),
+    ];
+    client.sendMessage(chatId, pending.content, wireMedia.length > 0 ? wireMedia : undefined);
+    const imagePreviews = pending.images?.map((i) => i.preview);
+    const documentPreviews = pending.documents?.map((d) =>
+      toMediaAttachment({ url: d.data_url, name: d.name }),
+    );
     setMessages((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
         role: "user",
-        content: pending,
+        content: pending.displayContent ?? pending.content,
         createdAt: Date.now(),
+        ...(imagePreviews && imagePreviews.length > 0 ? { images: imagePreviews } : {}),
+        ...(documentPreviews && documentPreviews.length > 0 ? { media: documentPreviews } : {}),
       },
     ]);
     setBooting(false);
   }, [chatId, client, setMessages]);
 
   const handleWelcomeSend = useCallback(
-    async (content: string) => {
+    async (
+      content: string,
+      images?: SendImage[],
+      documents?: OutboundMedia[],
+      displayContent?: string,
+    ) => {
       if (booting) return;
       setBooting(true);
-      pendingFirstRef.current = content;
+      pendingFirstRef.current = { content, images, documents, displayContent };
       const newId = await onNewChat();
       if (!newId) {
         pendingFirstRef.current = null;

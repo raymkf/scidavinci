@@ -18,7 +18,7 @@ from nanobot.utils.helpers import safe_filename
 DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 MAX_FILE_SIZE = DEFAULT_MAX_BYTES
 
-_DATA_URL_RE = re.compile(r"^data:([^;]+);base64,(.+)$", re.DOTALL)
+_DATA_URL_RE = re.compile(r"^data:([^;,]+)(?:;[^,]*)*;base64,(.+)$", re.DOTALL | re.IGNORECASE)
 
 
 class FileSizeExceeded(Exception):
@@ -30,6 +30,7 @@ def save_base64_data_url(
     media_dir: Path,
     *,
     max_bytes: int | None = None,
+    filename: str | None = None,
 ) -> str | None:
     """Decode a ``data:<mime>;base64,<payload>`` URL and persist it.
 
@@ -48,7 +49,10 @@ def save_base64_data_url(
     limit = DEFAULT_MAX_BYTES if max_bytes is None else max_bytes
     if len(raw) > limit:
         raise FileSizeExceeded(f"File exceeds {limit // (1024 * 1024)}MB limit")
-    ext = mimetypes.guess_extension(mime_type) or ".bin"
+    safe_name = safe_filename(filename) if filename else ""
+    ext = Path(safe_name).suffix if safe_name else ""
+    if not ext:
+        ext = mimetypes.guess_extension(mime_type) or ".bin"
     filename = f"{uuid.uuid4().hex[:12]}{ext}"
     dest = media_dir / safe_filename(filename)
     dest.write_bytes(raw)

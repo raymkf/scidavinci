@@ -613,6 +613,25 @@ class OpenAICompatProvider(LLMProvider):
             or (reasoning_effort is not None and _is_kimi_thinking_model(model_name)
                 and semantic_effort != "minimal")
         )
+        missing_tool_reasoning = any(
+            msg.get("role") == "assistant"
+            and msg.get("tool_calls")
+            and not msg.get("reasoning_content")
+            for msg in kwargs["messages"]
+        )
+        if thinking_active and missing_tool_reasoning:
+            logger.warning(
+                "Disabling thinking for tool continuation because an assistant "
+                "tool-call message is missing reasoning_content"
+            )
+            thinking_active = False
+            kwargs.pop("reasoning_effort", None)
+            if spec and spec.thinking_style:
+                extra = _THINKING_STYLE_MAP.get(spec.thinking_style, lambda _: None)(False)
+                if extra:
+                    kwargs.setdefault("extra_body", {}).update(extra)
+            if _is_kimi_thinking_model(model_name):
+                kwargs.setdefault("extra_body", {}).update({"thinking": {"type": "disabled"}})
         if thinking_active:
             for msg in kwargs["messages"]:
                 if msg.get("role") == "assistant" and "reasoning_content" not in msg:
@@ -784,6 +803,27 @@ class OpenAICompatProvider(LLMProvider):
         return str(value)
 
     @classmethod
+    def _extract_reasoning_content(cls, value: Any) -> str | None:
+        """Best-effort extraction for provider reasoning/thinking payloads.
+
+        OpenAI-compatible gateways disagree on the shape of reasoning content:
+        some return a plain string, some return a list of text blocks, and a
+        few wrap text in provider-specific dicts.  Losing this field breaks
+        thinking-mode tool continuations because those APIs require the exact
+        assistant reasoning block to be sent back with the tool call message.
+        """
+        text = cls._extract_text_content(value)
+        if text:
+            return text
+        value_map = cls._maybe_mapping(value)
+        if value_map is not None:
+            for key in ("content", "text", "reasoning_content", "reasoning"):
+                text = cls._extract_text_content(value_map.get(key))
+                if text:
+                    return text
+        return None
+
+    @classmethod
     def _extract_usage(cls, response: Any) -> dict[str, int]:
         """Extract token usage from an OpenAI-compatible response.
 
@@ -881,9 +921,9 @@ class OpenAICompatProvider(LLMProvider):
             # StepFun: fallback to reasoning field when content is empty
             if not content and msg0.get("reasoning") and self._spec and self._spec.reasoning_as_content:
                 content = self._extract_text_content(msg0.get("reasoning"))
-            reasoning_content = msg0.get("reasoning_content")
+            reasoning_content = self._extract_reasoning_content(msg0.get("reasoning_content"))
             if not reasoning_content and msg0.get("reasoning"):
-                reasoning_content = self._extract_text_content(msg0.get("reasoning"))
+                reasoning_content = self._extract_reasoning_content(msg0.get("reasoning"))
             for ch in choices:
                 ch_map = self._maybe_mapping(ch) or {}
                 m = self._maybe_mapping(ch_map.get("message")) or {}
@@ -895,7 +935,9 @@ class OpenAICompatProvider(LLMProvider):
                 if not content:
                     content = self._extract_text_content(m.get("content"))
                 if not reasoning_content:
-                    reasoning_content = m.get("reasoning_content")
+                    reasoning_content = self._extract_reasoning_content(m.get("reasoning_content"))
+                    if not reasoning_content:
+                        reasoning_content = self._extract_reasoning_content(m.get("reasoning"))
 
             parsed_tool_calls = []
             for tc in raw_tool_calls:
@@ -919,7 +961,7 @@ class OpenAICompatProvider(LLMProvider):
                 tool_calls=parsed_tool_calls,
                 finish_reason=finish_reason,
                 usage=self._extract_usage(response_map),
-                reasoning_content=reasoning_content if isinstance(reasoning_content, str) else None,
+                reasoning_content=reasoning_content,
             )
 
         if not response.choices:
@@ -957,9 +999,9 @@ class OpenAICompatProvider(LLMProvider):
                 function_provider_specific_fields=fn_prov,
             ))
 
-        reasoning_content = getattr(msg, "reasoning_content", None) or None
+        reasoning_content = self._extract_reasoning_content(getattr(msg, "reasoning_content", None)) or None
         if not reasoning_content and getattr(msg, "reasoning", None):
-            reasoning_content = msg.reasoning
+            reasoning_content = self._extract_reasoning_content(msg.reasoning)
 
         return LLMResponse(
             content=content,

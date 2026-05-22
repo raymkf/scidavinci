@@ -107,6 +107,10 @@
     "messageTooBig": {
       "title": "Pesan terlalu besar",
       "body": "Server menolak pesan terakhir karena melebihi batas ukuran. Hapus beberapa gambar atau gunakan berkas yang lebih kecil, lalu coba lagi."
+    },
+    "messageRejected": {
+      "title": "Pesan tidak terkirim",
+      "body": "Server menolak lampiran sebelum sampai ke asisten. Coba simpan berkas sebagai CSV atau gunakan berkas yang lebih kecil."
     }
   }
 }

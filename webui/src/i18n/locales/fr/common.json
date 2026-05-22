@@ -107,6 +107,10 @@
     "messageTooBig": {
       "title": "Message trop volumineux",
       "body": "Le serveur a rejeté votre dernier message car il dépasse la taille autorisée. Retirez des images ou choisissez des fichiers plus légers, puis renvoyez-le."
+    },
+    "messageRejected": {
+      "title": "Le message n'a pas été envoyé",
+      "body": "Le serveur a rejeté la pièce jointe avant qu'elle n'atteigne l'assistant. Essayez d'enregistrer le fichier en CSV ou d'utiliser un fichier plus petit."
     }
   }
 }

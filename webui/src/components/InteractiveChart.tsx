@@ -60,9 +60,9 @@ function buildMetadata(
     series,
     category,
     value,
-    unit: config.unit,
+    unit: displayText(config.unit) ?? config.unit,
     sourceRow,
-    label: `${category} ${series}: ${value}${config.unit ?? ""}`,
+    label: `${category} ${series}: ${value}${displayText(config.unit) ?? config.unit ?? ""}`,
   };
 }
 
@@ -141,6 +141,19 @@ function hexToRgba(hex: string, alpha: number): string {
   const g = (value >> 8) & 255;
   const b = value & 255;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function displayText(value: unknown): string | undefined {
+  let current = value;
+  while (current) {
+    if (typeof current === "string") return current;
+    if (typeof current === "object") {
+      current = (current as Record<string, unknown>).text;
+    } else {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 function boxOutlierValuesForRow(
@@ -294,10 +307,10 @@ export function InteractiveChart({
     tickLine: { stroke: JOURNAL_CHART_STYLE.axisColor },
   };
 
-  const xLabel = figure.axes?.x?.visible === false ? undefined : figure.axes?.x?.title ?? config.xLabel ?? config.xField;
+  const xLabel = figure.axes?.x?.visible === false ? undefined : displayText(figure.axes?.x?.title) ?? displayText(config.xLabel) ?? config.xField;
   const yLabel = figure.axes?.y?.visible === false
     ? undefined
-    : figure.axes?.y?.title ?? config.yLabel ?? (config.unit ? `Value (${config.unit})` : undefined);
+    : displayText(figure.axes?.y?.title) ?? displayText(config.yLabel) ?? (config.unit ? `Value (${displayText(config.unit) ?? config.unit})` : undefined);
   const showGrid = figure.grid?.visible !== false;
 
   const tooltipProps = {
@@ -547,7 +560,7 @@ export function InteractiveChart({
             isAnimationActive={false}
             cursor="pointer"
             label={({ name, value }: { name?: string; value?: number }) =>
-              `${name ?? ""}: ${value ?? 0}${config.unit ?? ""}`
+              `${name ?? ""}: ${value ?? 0}${displayText(config.unit) ?? config.unit ?? ""}`
             }
             onClick={(pointData) => {
               if (!pointData) return;
@@ -644,10 +657,12 @@ export function InteractiveChart({
         return renderBarChart();
     }
   })();
-  const titleText = figure.title?.visible === false ? undefined : figure.title?.text ?? config.title;
+  const titleText = figure.title?.visible === false
+    ? undefined
+    : displayText(figure.title?.text) ?? displayText(config.title);
   const captionText = figure.caption?.visible === false
     ? undefined
-    : figure.caption?.text ?? config.caption ?? config.description;
+    : displayText(figure.caption?.text) ?? displayText(config.caption) ?? displayText(config.description);
   const bg = figure.layout?.background;
   const canvasBackground = backgroundStyle(bg);
 
@@ -699,7 +714,7 @@ export function InteractiveChart({
                   selectObject({ kind: "annotation", id: annotation.id });
                 }}
               >
-                {annotation.text}
+                {displayText(annotation.text) ?? annotation.text}
               </button>
             ))}
         </div>
@@ -908,10 +923,10 @@ function VolcanoSvgPlot({ config, chartId, onElementToggle }: { config: ChartCon
 
         {/* Axis labels */}
         <text x={plot.x + plot.w / 2} y={height - 12} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor} fontFamily={JOURNAL_CHART_STYLE.fontFamily}>
-          {config.xLabel ?? "log2 fold change"}
+          {displayText(config.xLabel) ?? "log2 fold change"}
         </text>
         <text transform={`translate(16 ${plot.y + plot.h / 2}) rotate(-90)`} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor} fontFamily={JOURNAL_CHART_STYLE.fontFamily}>
-          {config.yLabel ?? "-log10(p-value)"}
+          {displayText(config.yLabel) ?? "-log10(p-value)"}
         </text>
       </svg>
     </div>
@@ -1000,7 +1015,7 @@ function BoxPlotSvg({ config, chartId, aspect, onElementToggle }: { config: Char
                 category: `${category}_${outlierIndex + 1}`,
                 value,
                 sourceRow: row,
-                label: item.label ?? `${category} outlier ${outlierIndex + 1}: ${value}${config.unit ?? ""}`,
+                label: item.label ?? `${category} outlier ${outlierIndex + 1}: ${value}${displayText(config.unit) ?? config.unit ?? ""}`,
               };
               return (
                 <circle
@@ -1023,8 +1038,8 @@ function BoxPlotSvg({ config, chartId, aspect, onElementToggle }: { config: Char
           </g>
         );
       })}
-      <text x={plot.x + plot.w / 2} y={height - 12} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor}>{config.xLabel ?? config.xField ?? ""}</text>
-      <text transform={`translate(16 ${plot.y + plot.h / 2}) rotate(-90)`} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor}>{config.yLabel ?? (config.unit ? `Value (${config.unit})` : "")}</text>
+      <text x={plot.x + plot.w / 2} y={height - 12} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor}>{displayText(config.xLabel) ?? config.xField ?? ""}</text>
+      <text transform={`translate(16 ${plot.y + plot.h / 2}) rotate(-90)`} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor}>{displayText(config.yLabel) ?? (displayText(config.unit) ?? config.unit ? `Value (${displayText(config.unit) ?? config.unit})` : "")}</text>
     </svg>
   );
 }
@@ -1033,10 +1048,160 @@ function BoxPlotSvg({ config, chartId, aspect, onElementToggle }: { config: Char
 export function parseChartCodeBlock(code: string): ChartConfig | null {
   try {
     const parsed = JSON.parse(code);
-    const configVal: Record<string, unknown> = parsed.chart ?? parsed;
+    const configVal = canonicalizeChartConfig(parsed.chart ?? parsed);
     if (!configVal.type || !configVal.data) return null;
     return normalizeChartConfig(configVal as unknown as ChartConfig);
   } catch {
     return null;
+  }
+}
+
+function canonicalizeChartConfig(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object") return {};
+  const input = raw as Record<string, unknown>;
+  const config: Record<string, unknown> = { ...input };
+
+  const rawType = String(config.type ?? config.chartType ?? config.kind ?? "bar").toLowerCase();
+  const typeAliases: Record<string, ChartConfig["type"]> = {
+    bar: "bar",
+    bars: "bar",
+    "bar-chart": "bar",
+    bar_chart: "bar",
+    column: "bar",
+    column_chart: "bar",
+    line: "line",
+    lines: "line",
+    line_chart: "line",
+    pie: "pie",
+    pie_chart: "pie",
+    area: "area",
+    area_chart: "area",
+    volcano: "volcano",
+    volcano_plot: "volcano",
+    box: "box",
+    boxplot: "box",
+    box_plot: "box",
+  };
+  config.type = typeAliases[rawType] ?? "bar";
+
+  const data = firstArray(
+    config.data,
+    config.values,
+    config.rows,
+    config.dataset,
+    config.table,
+  );
+  if (data) config.data = data;
+
+  config.xField ??= firstString(config.xField, config.x, config.xAxis, config.x_axis, config.categoryField, config.category);
+  config.yField ??= firstString(config.yField, config.y, config.yAxis, config.y_axis, config.valueField, config.value);
+  const yFields = firstStringArray(config.yFields, config.y_fields, config.series, config.seriesFields);
+  if (yFields) config.yFields = yFields;
+  if (!config.yFields && typeof config.yField === "string" && config.type !== "pie") {
+    config.yFields = [config.yField];
+  }
+
+  if (config.type === "pie") {
+    config.nameField ??= firstString(config.nameField, config.labelField, config.categoryField, config.xField, "name");
+    config.valueField ??= firstString(config.valueField, config.yField, "value");
+  }
+
+  if (Array.isArray(config.data)) {
+    inferMissingFields(config);
+  }
+  return config;
+}
+
+function firstArray(...values: unknown[]): Record<string, unknown>[] | null {
+  for (const value of values) {
+    if (Array.isArray(value) && value.every((item) => item && typeof item === "object")) {
+      return value as Record<string, unknown>[];
+    }
+  }
+  return null;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function firstStringArray(...values: unknown[]): string[] | undefined {
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      const items = value
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .map((item) => item.trim());
+      if (items.length > 0) return items;
+    }
+    if (typeof value === "string" && value.trim()) {
+      return value.split(",").map((item) => item.trim()).filter(Boolean);
+    }
+  }
+  return undefined;
+}
+
+function inferMissingFields(config: Record<string, unknown>): void {
+  const data = config.data as Record<string, unknown>[];
+  const firstRow = data[0];
+  if (!firstRow) return;
+  const keys = Object.keys(firstRow);
+  if (keys.length === 0) return;
+
+  const stringKeys = keys.filter((key) => typeof firstRow[key] === "string");
+  const numericFields = keys.filter((key) => {
+    return data.some((row) => {
+      const value = row[key];
+      return typeof value === "number" || (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)));
+    });
+  });
+
+  if (config.type === "pie") {
+    if (!config.nameField || !keys.includes(config.nameField as string)) {
+      config.nameField = (typeof config.xField === "string" ? config.xField : stringKeys[0]) ?? keys[0];
+    }
+    if (!config.valueField || !keys.includes(config.valueField as string)) {
+      config.valueField = numericFields.find((k) => k !== config.nameField) ?? keys.find((k) => k !== config.nameField) ?? "value";
+    }
+    return;
+  }
+
+  if (config.type === "volcano") {
+    // Volcano needs numeric x (fold change), numeric y (-log10p), and string labels.
+    // The generic inference would set xField to a string column like "gene", which is wrong.
+    if (!config.xField) {
+      config.xField = numericFields.find((k) => /fold|log|fc|lfc|ratio/i.test(k)) ?? numericFields[0] ?? keys[0];
+    }
+    if (!config.pValueField) {
+      config.pValueField = keys.find((k) => /pval|p_val|p[._-]?value/i.test(k)) ?? undefined;
+    }
+    if (!config.labelField && !config.idField) {
+      config.labelField = stringKeys[0] ?? keys[0];
+    }
+    config.yFields = undefined;
+    return;
+  }
+
+  if (config.type === "box") {
+    if (!config.xField) {
+      config.xField = stringKeys[0] ?? keys[0];
+    }
+    // Box plots use min/q1/median/q3/max fields, not yFields.
+    config.yFields = undefined;
+    return;
+  }
+
+  // Bar, line, area: xField is categorical (string), yFields are numeric.
+  if (!config.xField) {
+    config.xField = stringKeys[0] ?? keys[0];
+  }
+
+  const xField = typeof config.xField === "string" ? config.xField : undefined;
+  const yNumericFields = numericFields.filter((k) => k !== xField);
+
+  if (!config.yFields && !config.yField && yNumericFields.length > 0) {
+    config.yFields = yNumericFields;
   }
 }

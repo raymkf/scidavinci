@@ -35,6 +35,7 @@ import type { SendImage } from "@/hooks/useScidavinciStream";
 import { cn } from "@/lib/utils";
 
 const MAX_DOCUMENTS_PER_MESSAGE = 5;
+const MAX_INLINE_DOCUMENT_BYTES = 1 * 1024 * 1024;
 
 /** Server-side ``_DOCUMENT_MIME_ALLOWED`` mirror. */
 const DOC_MIME_TYPES: ReadonlySet<string> = new Set([
@@ -46,6 +47,24 @@ const DOC_MIME_TYPES: ReadonlySet<string> = new Set([
   "application/json",
   "application/pdf",
   "text/plain",
+]);
+
+const DOC_MIME_BY_EXT: Readonly<Record<string, string>> = {
+  ".csv": "text/csv",
+  ".tsv": "text/tab-separated-values",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xls": "application/vnd.ms-excel",
+  ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+  ".json": "application/json",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+};
+
+const INLINE_DOCUMENT_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".csv",
+  ".tsv",
+  ".json",
+  ".txt",
 ]);
 
 /** ``<input accept>``: aligned with the server's MIME whitelist. SVG is
@@ -62,10 +81,22 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function fileExtension(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot >= 0 ? name.slice(dot).toLowerCase() : "";
+}
+
+function documentMimeFor(file: File): string | null {
+  const byExt = DOC_MIME_BY_EXT[fileExtension(file.name)];
+  if (byExt) return byExt;
+  return DOC_MIME_TYPES.has(file.type) ? file.type : null;
+}
+
 interface DocumentAttachment {
   id: string;
   file: File;
   dataUrl: string;
+  inlineText?: string;
 }
 
 interface ThreadComposerProps {
@@ -114,10 +145,26 @@ export function ThreadComposer({
   const readFileAsDataUrl = useCallback((file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
+      reader.onload = () => {
+        const result = reader.result;
+        const mime = documentMimeFor(file);
+        if (typeof result !== "string" || !mime) {
+          reject(new Error("io"));
+          return;
+        }
+        const comma = result.indexOf(",");
+        const payload = comma >= 0 ? result.slice(comma + 1) : "";
+        resolve(`data:${mime};base64,${payload}`);
+      };
       reader.onerror = () => reject(new Error("io"));
       reader.readAsDataURL(file);
     });
+  }, []);
+
+  const readInlineDocumentText = useCallback(async (file: File): Promise<string | undefined> => {
+    if (!INLINE_DOCUMENT_EXTENSIONS.has(fileExtension(file.name))) return undefined;
+    if (file.size > MAX_INLINE_DOCUMENT_BYTES) return undefined;
+    return file.text();
   }, []);
 
   const enqueueDocs = useCallback(
@@ -134,8 +181,9 @@ export function ThreadComposer({
       for (const file of toAdd) {
         try {
           const dataUrl = await readFileAsDataUrl(file);
+          const inlineText = await readInlineDocumentText(file);
           docsIdCounter.current += 1;
-          results.push({ id: `doc-${docsIdCounter.current}`, file, dataUrl });
+          results.push({ id: `doc-${docsIdCounter.current}`, file, dataUrl, inlineText });
         } catch {
           setInlineError(`Failed to read ${file.name}`);
         }
@@ -144,7 +192,7 @@ export function ThreadComposer({
         setDocs((prev) => [...prev, ...results]);
       }
     },
-    [readFileAsDataUrl],
+    [readFileAsDataUrl, readInlineDocumentText],
   );
 
   const formatRejection = useCallback(
@@ -161,7 +209,7 @@ export function ThreadComposer({
       const imageFiles: File[] = [];
       const docFiles: File[] = [];
       for (const f of files) {
-        if (DOC_MIME_TYPES.has(f.type)) {
+        if (documentMimeFor(f)) {
           docFiles.push(f);
         } else {
           imageFiles.push(f);
@@ -356,6 +404,15 @@ export function ThreadComposer({
       contextBlocks.push(`[Selected Visual Anchors]\n${visualContext}`);
     }
 
+    const inlineDocBlocks = readyDocs
+      .filter((d) => typeof d.inlineText === "string" && d.inlineText.length > 0)
+      .map((d) => `[Uploaded File: ${d.file.name}]\n\`\`\`${fileExtension(d.file.name).slice(1) || "text"}\n${d.inlineText}\n\`\`\``);
+    if (inlineDocBlocks.length > 0) {
+      contextBlocks.push(
+        `${inlineDocBlocks.join("\n\n")}\n\nUse the uploaded file content above for this request. If the user asks for a chart or visualization, output a fenced \`\`\`chart-json code block for the WebUI interactive chart renderer; do not create a standalone HTML/Plotly file unless the user explicitly asks for an HTML file.`,
+      );
+    }
+
     // Wire content = structured context + user text. Chat bubble = user text only.
     const enrichedContent = contextBlocks.length > 0
       ? `${contextBlocks.join("\n\n")}\n\n${trimmed}`
@@ -373,14 +430,17 @@ export function ThreadComposer({
         : undefined;
     const docPayload: OutboundMedia[] | undefined =
       readyDocs.length > 0
-        ? readyDocs.map((d) => ({
+        ? readyDocs
+          .filter((d) => !d.inlineText)
+          .map((d) => ({
             data_url: d.dataUrl,
             name: d.file.name,
           }))
         : undefined;
+    const outboundDocPayload = docPayload && docPayload.length > 0 ? docPayload : undefined;
 
     // Pass clean user text as displayContent for the chat bubble
-    onSend(enrichedContent, payload, docPayload, trimmed);
+    onSend(enrichedContent, payload, outboundDocPayload, trimmed);
     setValue("");
     setInlineError(null);
     clearSelection();
