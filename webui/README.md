@@ -1,6 +1,6 @@
-# nanobot webui
+# SciDaVinci Web UI
 
-The browser front-end for the nanobot gateway. It is built with Vite + React 18 +
+The browser front-end for the SciDaVinci gateway. It is built with Vite + React 18 +
 TypeScript + Tailwind 3 + shadcn/ui, talks to the gateway over the WebSocket
 multiplex protocol, and reads session metadata from the embedded REST surface
 on the same port.
@@ -27,7 +27,7 @@ nanobot/web/dist/      build output served by the gateway
 
 ## Develop from source
 
-### 1. Install nanobot from source
+### 1. Install SciDaVinci from source
 
 From the repository root:
 
@@ -37,7 +37,7 @@ pip install -e .
 
 ### 2. Enable the WebSocket channel
 
-In `~/.nanobot/config.json`:
+In `~/.scidavinci/config.json`:
 
 ```json
 { "channels": { "websocket": { "enabled": true } } }
@@ -48,7 +48,7 @@ In `~/.nanobot/config.json`:
 In one terminal:
 
 ```bash
-nanobot gateway
+scidavinci gateway
 ```
 
 ### 4. Start the WebUI dev server
@@ -69,7 +69,7 @@ traffic to `http://127.0.0.1:8765`.
 If your gateway listens on a non-default port, point the dev server at it:
 
 ```bash
-NANOBOT_API_URL=http://127.0.0.1:9000 bun run dev
+SCIDAVINCI_API_URL=http://127.0.0.1:9000 bun run dev
 ```
 
 ## Build for packaged runtime
@@ -80,7 +80,7 @@ bun run build
 ```
 
 This writes the production assets to `../nanobot/web/dist`, which is the
-directory served by `nanobot gateway` and bundled into the Python wheel.
+directory served by `scidavinci gateway` and bundled into the Python wheel.
 
 If you are cutting a release, run the build before packaging so the published
 wheel contains the current WebUI assets.

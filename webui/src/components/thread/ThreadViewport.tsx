@@ -87,8 +87,8 @@ export function ThreadViewport({
         el.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     };
-    window.addEventListener("nanobot:navigateToMessage", handler);
-    return () => window.removeEventListener("nanobot:navigateToMessage", handler);
+    window.addEventListener("scidavinci:navigateToMessage", handler);
+    return () => window.removeEventListener("scidavinci:navigateToMessage", handler);
   }, []);
 
   return (

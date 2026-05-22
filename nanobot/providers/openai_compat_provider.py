@@ -51,8 +51,8 @@ _ALNUM = string.ascii_letters + string.digits
 _STANDARD_TC_KEYS = frozenset({"id", "type", "index", "function"})
 _STANDARD_FN_KEYS = frozenset({"name", "arguments"})
 _DEFAULT_OPENROUTER_HEADERS = {
-    "HTTP-Referer": "https://github.com/HKUDS/nanobot",
-    "X-OpenRouter-Title": "nanobot",
+    "HTTP-Referer": "https://github.com/raymkf/scidavinci",
+    "X-OpenRouter-Title": "SciDaVinci",
     "X-OpenRouter-Categories": "cli-agent,personal-agent",
 }
 _KIMI_THINKING_MODELS: frozenset[str] = frozenset({
@@ -173,7 +173,7 @@ def _extract_tc_extras(tc: Any) -> tuple[
 
 
 def _uses_openrouter_attribution(spec: "ProviderSpec | None", api_base: str | None) -> bool:
-    """Apply Nanobot attribution headers to OpenRouter requests by default."""
+    """Apply SciDaVinci attribution headers to OpenRouter requests by default."""
     if spec and spec.name == "openrouter":
         return True
     return bool(api_base and "openrouter" in api_base.lower())

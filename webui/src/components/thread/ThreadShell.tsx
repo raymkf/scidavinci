@@ -9,7 +9,7 @@ import { ThreadViewport } from "@/components/thread/ThreadViewport";
 import { VisualWorkspacePanel } from "@/components/VisualWorkspacePanel";
 import { ChartSelectionProvider, useChartSelection } from "@/contexts/ChartSelectionContext";
 import { VisualWorkspaceProvider, useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
-import { useNanobotStream } from "@/hooks/useNanobotStream";
+import { useScidavinciStream } from "@/hooks/useScidavinciStream";
 import { useSessionHistory } from "@/hooks/useSessions";
 import { parseChartActionsFromContent } from "@/lib/chart-actions";
 import { resolveSemanticSelectionAction } from "@/lib/chart-semantic-selection";
@@ -103,7 +103,7 @@ export function ThreadShell({
     setMessages,
     streamError,
     dismissStreamError,
-  } = useNanobotStream(chatId, initial);
+  } = useScidavinciStream(chatId, initial);
 
   // When chatId changes during render, use initial (new session's msgs)
   // instead of streamMessages (still the old session's). This prevents
@@ -148,7 +148,7 @@ export function ThreadShell({
     if (!chatId) return;
     // When switching chats, first persist the old chat's messages under
     // its own key, then skip the write; streamMessages still belongs to
-  // the previous chat until useNanobotStream resets it.
+  // the previous chat until useScidavinciStream resets it.
     if (prevCommittedChatRef.current !== chatId) {
       if (prevCommittedChatRef.current) {
         messageCacheRef.current.set(prevCommittedChatRef.current, streamMessages);
@@ -199,13 +199,13 @@ export function ThreadShell({
     <div className="flex w-full max-w-[40rem] flex-col gap-2 text-left animate-in fade-in-0 slide-in-from-bottom-2 duration-500">
       <div className="inline-flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
         <img
-          src="/brand/nanobot_icon.png"
+          src="/brand/scidavinci_icon.png"
           alt=""
           aria-hidden
           draggable={false}
           className="h-4 w-4 rounded-sm opacity-90"
         />
-        <span className="text-foreground/82">nanobot</span>
+        <span className="text-foreground/82">SciDaVinci</span>
       </div>
       <p className="max-w-[28rem] text-[13px] leading-6 text-muted-foreground">
         {t("thread.empty.description")}
@@ -216,7 +216,7 @@ export function ThreadShell({
   return (
     <ChartSelectionProvider
       key={chatId ?? "welcome"}
-      persistenceKey={chatId ? `nanobot.chartStyles.${chatId}` : null}
+      persistenceKey={chatId ? `scidavinci.chartStyles.${chatId}` : null}
     >
       <VisualWorkspaceProvider key={chatId ?? "welcome-workspace"} sessionId={chatId}>
         <ChartActionWatcher messages={messages} />

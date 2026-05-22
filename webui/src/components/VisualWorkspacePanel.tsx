@@ -64,7 +64,7 @@ import type {
 } from "@/lib/chart-types";
 import { cn } from "@/lib/utils";
 
-const WORKSPACE_STORAGE_KEY = "nanobot.workspace.layout";
+const WORKSPACE_STORAGE_KEY = "scidavinci.workspace.layout";
 const MIN_WIDTH = 260;
 const MAX_WIDTH = 640;
 const DEFAULT_WIDTH = 336;
@@ -187,7 +187,7 @@ export function VisualWorkspacePanel() {
       activeAsset.sourceMessageId
     ) {
       window.dispatchEvent(
-        new CustomEvent("nanobot:navigateToMessage", {
+        new CustomEvent("scidavinci:navigateToMessage", {
           detail: { messageId: activeAsset.sourceMessageId },
         }),
       );

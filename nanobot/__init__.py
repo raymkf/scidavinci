@@ -1,6 +1,4 @@
-"""
-nanobot - A lightweight AI agent framework
-"""
+"""SciDaVinci runtime package."""
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
@@ -18,14 +16,14 @@ def _read_pyproject_version() -> str | None:
 
 def _resolve_version() -> str:
     try:
-        return _pkg_version("nanobot-ai")
+        return _pkg_version("scidavinci")
     except PackageNotFoundError:
         # Source checkouts often import nanobot without installed dist-info.
         return _read_pyproject_version() or "0.1.5.post2"
 
 
 __version__ = _resolve_version()
-__logo__ = "🐈"
+__logo__ = "SciDaVinci"
 
 from nanobot.nanobot import Nanobot, RunResult
 

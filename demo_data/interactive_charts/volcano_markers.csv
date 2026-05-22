@@ -1,0 +1,11 @@
+marker,log2FoldChange,padj,category,description
+GENE_A,2.42,0.0008,up,synthetic marker with strong positive change
+GENE_B,1.87,0.0062,up,synthetic marker with moderate positive change
+GENE_C,1.31,0.0180,up,synthetic marker near the highlight threshold
+GENE_D,-2.15,0.0014,down,synthetic marker with strong negative change
+GENE_E,-1.76,0.0095,down,synthetic marker with moderate negative change
+GENE_F,-1.18,0.0410,down,synthetic marker near the highlight threshold
+GENE_G,0.32,0.4200,neutral,synthetic marker with minimal change
+GENE_H,-0.21,0.6100,neutral,synthetic marker with minimal change
+GENE_I,0.74,0.1100,neutral,synthetic marker below significance threshold
+GENE_J,-0.68,0.1900,neutral,synthetic marker below significance threshold

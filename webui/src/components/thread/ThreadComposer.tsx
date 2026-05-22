@@ -31,7 +31,7 @@ import { useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
 import { detectColorChangeFromMessage } from "@/lib/chart-actions";
 import { chartSemanticSelectionSummary } from "@/lib/chart-semantic-selection";
 import type { OutboundMedia } from "@/lib/types";
-import type { SendImage } from "@/hooks/useNanobotStream";
+import type { SendImage } from "@/hooks/useScidavinciStream";
 import { cn } from "@/lib/utils";
 
 const MAX_DOCUMENTS_PER_MESSAGE = 5;

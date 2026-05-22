@@ -981,7 +981,7 @@ class AgentLoop:
                             profile = generate_profile(
                                 p, max_sample_rows=self.datasets_config.max_profile_rows,
                             )
-                            did = self.dataset_registry.register(p, profile)
+                            self.dataset_registry.register(p, profile)
                             profile_blocks.append(profile_to_llm_text(profile))
                         except Exception as exc:
                             logger.error("Failed to profile dataset {}: {}", p, exc)

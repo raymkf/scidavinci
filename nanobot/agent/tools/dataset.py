@@ -12,7 +12,6 @@ from typing import Any, TYPE_CHECKING
 
 from nanobot.agent.tools.base import Tool, tool_parameters
 from nanobot.agent.tools.schema import (
-    BooleanSchema,
     IntegerSchema,
     StringSchema,
     tool_parameters_schema,
@@ -233,7 +232,7 @@ class QueryDatasetTool(Tool):
     dataset_id=StringSchema(description="Dataset ID from list_datasets"),
     chart_type=StringSchema(
         description="Chart type",
-        enum=["bar", "line", "pie", "area", "scatter", "box", "volcano"],
+        enum=["bar", "line", "pie", "area", "box", "volcano"],
     ),
     x_field=StringSchema(
         description="Column name for the x-axis / category axis",
@@ -287,7 +286,7 @@ class PlotDatasetTool(Tool):
             "frontend renders as an interactive visualization. "
             "Use this AFTER inspecting or querying the dataset to understand "
             "its structure. "
-            "Supported chart types: bar, line, pie, area, scatter, box, volcano.\n"
+            "Supported chart types: bar, line, pie, area, box, volcano.\n"
             "The chart data is computed from the FULL dataset file (not a sample), "
             "so aggregations and statistics are accurate.\n"
             "After the chart is displayed, the user can interactively select "
@@ -431,8 +430,6 @@ class PlotDatasetTool(Tool):
         if chart_type == "pie":
             config["valueField"] = resolved_y_field
             config["nameField"] = x_field
-        elif chart_type == "scatter":
-            config["type"] = "scatter"
         elif chart_type == "volcano":
             config["xValueField"] = x_field
             config["yValueField"] = resolved_y_field

@@ -1,20 +1,20 @@
 {
   "app": {
-    "brand": "nanobot",
+    "brand": "SciDaVinci",
     "loading": {
-      "connecting": "Menghubungkan ke nanobot…",
-      "boot": "Memuat nanobot…"
+      "connecting": "Menghubungkan ke SciDaVinci…",
+      "boot": "Memuat SciDaVinci…"
     },
     "error": {
-      "title": "Tidak dapat menjangkau nanobot",
-      "gatewayHint": "Pastikan gateway sedang berjalan (`nanobot gateway`) dan halaman ini dibuka pada mesin yang sama."
+      "title": "Tidak dapat menjangkau SciDaVinci",
+      "gatewayHint": "Pastikan gateway sedang berjalan (`scidavinci gateway`) dan halaman ini dibuka pada mesin yang sama."
     },
     "documentTitle": {
-      "base": "nanobot",
-      "chat": "{{title}} · nanobot"
+      "base": "SciDaVinci",
+      "chat": "{{title}} · SciDaVinci"
     },
     "meta": {
-      "description": "UI web nanobot — ngobrol dengan workspace nanobot Anda."
+      "description": "UI web SciDaVinci — ngobrol dengan workspace SciDaVinci Anda."
     }
   },
   "sidebar": {

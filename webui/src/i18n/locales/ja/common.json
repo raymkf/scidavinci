@@ -1,20 +1,20 @@
 {
   "app": {
-    "brand": "nanobot",
+    "brand": "SciDaVinci",
     "loading": {
-      "connecting": "nanobot に接続中…",
-      "boot": "nanobot を読み込み中…"
+      "connecting": "SciDaVinci に接続中…",
+      "boot": "SciDaVinci を読み込み中…"
     },
     "error": {
-      "title": "nanobot に接続できませんでした",
-      "gatewayHint": "gateway（`nanobot gateway`）が起動しており、このページが同じマシン上で開かれていることを確認してください。"
+      "title": "SciDaVinci に接続できませんでした",
+      "gatewayHint": "gateway（`scidavinci gateway`）が起動しており、このページが同じマシン上で開かれていることを確認してください。"
     },
     "documentTitle": {
-      "base": "nanobot",
-      "chat": "{{title}} · nanobot"
+      "base": "SciDaVinci",
+      "chat": "{{title}} · SciDaVinci"
     },
     "meta": {
-      "description": "nanobot Web UI — nanobot ワークスペースと会話します。"
+      "description": "SciDaVinci Web UI — SciDaVinci ワークスペースと会話します。"
     }
   },
   "sidebar": {

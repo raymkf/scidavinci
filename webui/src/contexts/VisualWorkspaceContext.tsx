@@ -46,7 +46,7 @@ function readPersisted(sessionId?: string | null): PersistedWorkspace {
     return { assets: [], activeAssetId: null, anchors: [] };
   }
   try {
-    const raw = window.localStorage.getItem(`nanobot.workspace.${sessionId}`);
+    const raw = window.localStorage.getItem(`scidavinci.workspace.${sessionId}`);
     if (!raw) return { assets: [], activeAssetId: null, anchors: [] };
     const parsed = JSON.parse(raw) as PersistedWorkspace;
     return {
@@ -63,11 +63,11 @@ function persist(sessionId: string | null | undefined, state: PersistedWorkspace
   if (!sessionId || typeof window === "undefined") return;
   try {
     if (state.assets.length === 0 && state.anchors.length === 0) {
-      window.localStorage.removeItem(`nanobot.workspace.${sessionId}`);
+      window.localStorage.removeItem(`scidavinci.workspace.${sessionId}`);
       return;
     }
     window.localStorage.setItem(
-      `nanobot.workspace.${sessionId}`,
+      `scidavinci.workspace.${sessionId}`,
       JSON.stringify(state),
     );
   } catch {

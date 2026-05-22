@@ -8,7 +8,6 @@ in memory.
 from __future__ import annotations
 
 import csv
-import io
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any

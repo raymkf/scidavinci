@@ -1,127 +1,50 @@
-# Contributing to nanobot
+# Contributing to SciDaVinci
 
-Thank you for being here.
+Thank you for your interest in SciDaVinci.
 
-nanobot is built with a simple belief: good tools should feel calm, clear, and humane.
-We care deeply about useful features, but we also believe in achieving more with less:
-solutions should be powerful without becoming heavy, and ambitious without becoming
-needlessly complicated.
+SciDaVinci is an early-stage interactive scientific plotting and analysis platform. The current priority is to make the core workflow reliable:
 
-This guide is not only about how to open a PR. It is also about how we hope to build
-software together: with care, clarity, and respect for the next person reading the code.
-
-## Maintainers
-
-| Maintainer | Focus |
-|------------|-------|
-| [@re-bin](https://github.com/re-bin) | Project lead, `main` branch |
-| [@chengyongru](https://github.com/chengyongru) | `nightly` branch, experimental features |
-
-## Branching Strategy
-
-We use a two-branch model to balance stability and exploration:
-
-| Branch | Purpose | Stability |
-|--------|---------|-----------|
-| `main` | Stable releases | Production-ready |
-| `nightly` | Experimental features | May have bugs or breaking changes |
-
-### Which Branch Should I Target?
-
-**Target `nightly` if your PR includes:**
-
-- New features or functionality
-- Refactoring that may affect existing behavior
-- Changes to APIs or configuration
-
-**Target `main` if your PR includes:**
-
-- Bug fixes with no behavior changes
-- Documentation improvements
-- Minor tweaks that don't affect functionality
-
-**When in doubt, target `nightly`.** It is easier to move a stable idea from `nightly`
-to `main` than to undo a risky change after it lands in the stable branch.
-
-### How Does Nightly Get Merged to Main?
-
-We don't merge the entire `nightly` branch. Instead, stable features are **cherry-picked** from `nightly` into individual PRs targeting `main`:
-
-```
-nightly  ──┬── feature A (stable) ──► PR ──► main
-           ├── feature B (testing)
-           └── feature C (stable) ──► PR ──► main
-```
-
-This happens approximately **once a week**, but the timing depends on when features become stable enough.
-
-### Quick Summary
-
-| Your Change | Target Branch |
-|-------------|---------------|
-| New feature | `nightly` |
-| Bug fix | `main` |
-| Documentation | `main` |
-| Refactoring | `nightly` |
-| Unsure | `nightly` |
+- generate interactive figures from tabular data;
+- select and analyze chart elements;
+- apply model-driven visual edits;
+- compose multiple figures into exportable panels.
 
 ## Development Setup
 
-Keep setup boring and reliable. The goal is to get you into the code quickly:
-
 ```bash
-# Clone the repository
-git clone https://github.com/HKUDS/nanobot.git
-cd nanobot
-
-# Install with dev dependencies
+git clone https://github.com/raymkf/scidavinci.git
+cd scidavinci
 pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Lint code
-ruff check nanobot/
-
-# Format code
-ruff format nanobot/
 ```
 
-## Contribution License
+Run lint checks:
 
-By submitting a contribution, you confirm that you have the right to submit it
-and agree that it will be licensed under the project's MIT License.
+```bash
+ruff check nanobot/
+```
 
-## Code Style
+Run tests if the test suite is present in your checkout:
 
-We care about more than passing lint. We want nanobot to stay small, calm, and readable.
+```bash
+pytest tests/
+```
 
-When contributing, please aim for code that feels:
+Run the Web UI locally:
 
-- Simple: prefer the smallest change that solves the real problem
-- Clear: optimize for the next reader, not for cleverness
-- Decoupled: keep boundaries clean and avoid unnecessary new abstractions
-- Honest: do not hide complexity, but do not create extra complexity either
-- Durable: choose solutions that are easy to maintain, test, and extend
+```bash
+cd webui
+bun install
+bun run dev
+```
 
-In practice:
+## Contribution Guidelines
 
-- Line length: 100 characters (`ruff`)
-- Target: Python 3.11+
-- Linting: `ruff` with rules E, F, I, N, W (E501 ignored)
-- Async: uses `asyncio` throughout; pytest with `asyncio_mode = "auto"`
-- Prefer readable code over magical code
-- Prefer focused patches over broad rewrites
-- If a new abstraction is introduced, it should clearly reduce complexity rather than move it around
+- Keep changes focused and easy to review.
+- Prefer small, well-named helpers over broad rewrites.
+- Do not commit API keys, local config files, chat logs, generated media, virtual environments, or large raw datasets.
+- If you add a chart capability, update the README chart support table and add a compact demo/test fixture.
+- If you change the visual workspace behavior, verify chart selection, style updates, export, and collage behavior.
 
-## Questions?
+## License
 
-If you have questions, ideas, or half-formed insights, you are warmly welcome here.
-
-Please feel free to open an [issue](https://github.com/HKUDS/nanobot/issues), join the community, or simply reach out:
-
-- [Discord](https://discord.gg/MnCvHqpUGB)
-- [Feishu/WeChat](./COMMUNICATION.md)
-- Email: Xubin Ren (@Re-bin) — <xubinrencs@gmail.com>
-
-Thank you for spending your time and care on nanobot. We would love for more people to participate in this community, and we genuinely welcome contributions of all sizes.
+By submitting a contribution, you agree that it will be licensed under the project's MIT License.

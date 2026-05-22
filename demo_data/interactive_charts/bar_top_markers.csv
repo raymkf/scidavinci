@@ -1,0 +1,7 @@
+marker,score,category
+GENE_A,2.42,up
+GENE_D,-2.15,down
+GENE_B,1.87,up
+GENE_E,-1.76,down
+GENE_C,1.31,up
+GENE_F,-1.18,down

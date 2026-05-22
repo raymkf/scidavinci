@@ -1,0 +1,6 @@
+timepoint,control,treatment,recovery
+T0,10,10,10
+T1,12,16,13
+T2,15,23,17
+T3,18,31,22
+T4,21,38,27

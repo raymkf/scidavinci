@@ -152,7 +152,7 @@ class DatasetRegistry:
         try:
             conn = duckdb.connect()
             try:
-                table_name = self._load_table(conn, path, ext, profile)
+                self._load_table(conn, path, ext, profile)
                 result = conn.execute(sql).fetchall()
                 col_names = [desc[0] for desc in conn.description]
             finally:

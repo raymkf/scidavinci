@@ -10,7 +10,7 @@ import { useSessions } from "@/hooks/useSessions";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 import { deriveWsUrl, fetchBootstrap } from "@/lib/bootstrap";
-import { NanobotClient } from "@/lib/nanobot-client";
+import { SciDaVinciClient } from "@/lib/scidavinci-client";
 import { ClientProvider } from "@/providers/ClientProvider";
 import type { ChatSummary } from "@/lib/types";
 
@@ -19,12 +19,12 @@ type BootState =
   | { status: "error"; message: string }
   | {
       status: "ready";
-      client: NanobotClient;
+      client: SciDaVinciClient;
       token: string;
       modelName: string | null;
     };
 
-const SIDEBAR_STORAGE_KEY = "nanobot-webui.sidebar";
+const SIDEBAR_STORAGE_KEY = "scidavinci-webui.sidebar";
 const SIDEBAR_WIDTH = 279;
 type ShellView = "chat" | "settings";
 
@@ -50,7 +50,7 @@ export default function App() {
         const boot = await fetchBootstrap();
         if (cancelled) return;
         const url = deriveWsUrl(boot.ws_path, boot.token);
-        const client = new NanobotClient({
+        const client = new SciDaVinciClient({
           url,
           onReauth: async () => {
             try {
@@ -107,7 +107,7 @@ export default function App() {
       <div className="flex h-full w-full items-center justify-center">
         <div className="flex flex-col items-center gap-3 animate-in fade-in-0 duration-300">
           <img
-            src="/brand/nanobot_icon.png"
+            src="/brand/scidavinci_icon.png"
             alt=""
             className="h-10 w-10 animate-pulse select-none"
             aria-hidden
@@ -129,7 +129,7 @@ export default function App() {
       <div className="flex h-full w-full items-center justify-center px-4 text-center">
         <div className="flex max-w-md flex-col items-center gap-3">
           <img
-            src="/brand/nanobot_icon.png"
+            src="/brand/scidavinci_icon.png"
             alt=""
             className="h-10 w-10 opacity-60 grayscale select-none"
             aria-hidden

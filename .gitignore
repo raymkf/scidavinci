@@ -3,10 +3,32 @@
 .assets
 .docs
 .env
+.env.*
+!.env.example
+.nanobot/
+.scidavinci/
+nanobot-workspace/
+scidavinci-workspace/
+workspace/
+sessions/
+memory/
+media/
+uploads/
+*.sqlite
+*.sqlite3
+*.db
+*.log
+*.pem
+*.key
+*.token
+.release-audit/
 .web
 .orion
 case/
-tests/
+tests/*
+!tests/interactive_charts/
+!tests/interactive_charts/**
+tests/airway_himes_2014/
 bridge/dist/
 
 # webui (monorepo frontend)
@@ -14,6 +36,7 @@ webui/node_modules/
 webui/dist/
 webui/coverage/
 webui/.vite/
+webui/src/tests/
 *.tsbuildinfo
 
 # Python bytecode & caches

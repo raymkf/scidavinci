@@ -34,16 +34,16 @@ body:
     id: component
     attributes:
       label: Related Component
-      description: Which part of nanobot does this relate to?
+      description: Which part of SciDaVinci does this relate to?
       options:
-        - Channel (WeChat, Feishu, Telegram, etc.)
-        - LLM Provider
-        - Agent / Prompts
-        - Skills / Plugins
-        - Configuration
-        - CLI
-        - API Server
-        - Documentation
+        - Interactive chart generation
+        - Chart element selection
+        - Model-driven visual editing
+        - Figure analysis
+        - Collage / multi-panel export
+        - Web UI
+        - Agent runtime
+        - Documentation / examples
         - Other
     validations:
       required: true

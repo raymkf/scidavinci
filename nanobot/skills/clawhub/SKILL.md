@@ -49,5 +49,5 @@ npx --yes clawhub@latest list --workdir ~/.nanobot/workspace
 - Requires Node.js (`npx` comes with it).
 - No API key needed for search and install.
 - Login (`npx --yes clawhub@latest login`) is only required for publishing.
-- `--workdir ~/.nanobot/workspace` is critical — without it, skills install to the current directory instead of the nanobot workspace.
+- `--workdir ~/.nanobot/workspace` is critical — without it, skills install to the current directory instead of the SciDaVinci workspace.
 - After install, remind the user to start a new session to load the skill.

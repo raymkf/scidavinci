@@ -68,7 +68,7 @@ class DreamConfig(Base):
 class AgentDefaults(Base):
     """Default agent configuration."""
 
-    workspace: str = "~/.nanobot/workspace"
+    workspace: str = "~/.scidavinci/workspace"
     model: str = "anthropic/claude-opus-4-5"
     provider: str = (
         "auto"  # Provider name (e.g. "anthropic", "openrouter") or "auto" for auto-detection
@@ -268,7 +268,7 @@ class ToolsConfig(Base):
 
 
 class Config(BaseSettings):
-    """Root configuration for nanobot."""
+    """Root configuration for SciDaVinci."""
 
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
@@ -375,4 +375,4 @@ class Config(BaseSettings):
                 return spec.default_api_base
         return None
 
-    model_config = ConfigDict(env_prefix="NANOBOT_", env_nested_delimiter="__")
+    model_config = ConfigDict(env_prefix="SCIDAVINCI_", env_nested_delimiter="__")

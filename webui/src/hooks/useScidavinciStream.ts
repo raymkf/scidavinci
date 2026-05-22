@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useClient } from "@/providers/ClientProvider";
 import { toMediaAttachment } from "@/lib/media";
-import type { StreamError } from "@/lib/nanobot-client";
+import type { StreamError } from "@/lib/scidavinci-client";
 import type {
   InboundEvent,
   OutboundMedia,
@@ -34,7 +34,7 @@ export interface SendImage {
   preview: UIImage;
 }
 
-export function useNanobotStream(
+export function useScidavinciStream(
   chatId: string | null,
   initialMessages: UIMessage[] = [],
 ): {

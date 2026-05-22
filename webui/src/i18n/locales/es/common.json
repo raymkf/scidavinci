@@ -1,20 +1,20 @@
 {
   "app": {
-    "brand": "nanobot",
+    "brand": "SciDaVinci",
     "loading": {
-      "connecting": "Conectando con nanobot…",
-      "boot": "Cargando nanobot…"
+      "connecting": "Conectando con SciDaVinci…",
+      "boot": "Cargando SciDaVinci…"
     },
     "error": {
-      "title": "No se pudo conectar con nanobot",
-      "gatewayHint": "Asegúrate de que la gateway esté en ejecución (`nanobot gateway`) y de que esta página esté abierta en la misma máquina."
+      "title": "No se pudo conectar con SciDaVinci",
+      "gatewayHint": "Asegúrate de que la gateway esté en ejecución (`scidavinci gateway`) y de que esta página esté abierta en la misma máquina."
     },
     "documentTitle": {
-      "base": "nanobot",
-      "chat": "{{title}} · nanobot"
+      "base": "SciDaVinci",
+      "chat": "{{title}} · SciDaVinci"
     },
     "meta": {
-      "description": "Interfaz web de nanobot: conversa con tu espacio de trabajo de nanobot."
+      "description": "Interfaz web de SciDaVinci: conversa con tu espacio de trabajo de SciDaVinci."
     }
   },
   "sidebar": {
