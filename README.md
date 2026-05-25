@@ -80,6 +80,8 @@ SciDaVinci 的重点不是只让模型“看图回答”，而是让模型能够
 - 将同一批分析结果组织成更适合论文、组会或汇报的多面板图；
 - 一键导出 PNG，减少在外部软件中反复拖拽和对齐的时间。
 
+当前版本中，拼图排版由用户在 Web UI 的 Visual workspace 中手动完成；模型负责生成和分析图表，但不会自动创建拼图布局。
+
 ### 示例工作流
 
 ```text
@@ -95,8 +97,10 @@ SciDaVinci 的重点不是只让模型“看图回答”，而是让模型能够
 ```
 
 ```text
-再用 demo_data/interactive_charts/bar_top_markers.csv 生成一张柱状图，然后把火山图和柱状图拼成一个 1x2 的 figure panel。
+再用 demo_data/interactive_charts/bar_top_markers.csv 生成一张柱状图。
 ```
+
+生成多张图后，可以在右侧 Visual workspace 中手动点击 `New Collage`，用 `Add` 将火山图和柱状图加入拼图画布，选择 `1x2` 布局后导出 PNG。
 
 ### 项目架构
 
@@ -318,6 +322,8 @@ The visual workspace currently supports:
 - turning related analyses into a paper, lab meeting, or presentation-ready figure panel;
 - exporting the composed figure as PNG.
 
+In the current version, collage layout is a manual Web UI workflow in the Visual workspace. The model can generate and analyze charts, but it does not automatically create collage layouts.
+
 ### Example Workflow
 
 ```text
@@ -333,8 +339,10 @@ Also select GENE_E, then compare these four markers with the other significantly
 ```
 
 ```text
-Create a bar chart from demo_data/interactive_charts/bar_top_markers.csv, then combine the volcano plot and the bar chart into a 1x2 figure panel.
+Create a bar chart from demo_data/interactive_charts/bar_top_markers.csv.
 ```
+
+After generating multiple charts, use the right-side Visual workspace manually: click `New Collage`, use `Add` to place the volcano plot and bar chart on the collage canvas, choose the `1x2` layout, then export PNG.
 
 ### Architecture
 

@@ -24,8 +24,10 @@ Select GENE_A, GENE_B, and GENE_D, color them red, add labels, and compare them 
 ```
 
 ```text
-Create a bar chart from demo_data/interactive_charts/bar_top_markers.csv, then combine it with the volcano plot into a 1x2 figure panel.
+Create a bar chart from demo_data/interactive_charts/bar_top_markers.csv.
 ```
+
+To compose a multi-panel figure, use the right-side Visual workspace manually: click `New Collage`, use `Add` to place generated charts on the collage canvas, choose a layout such as `1x2`, then export PNG.
 
 ## Test Fixtures
 
