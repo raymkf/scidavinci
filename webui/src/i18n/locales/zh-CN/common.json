@@ -55,6 +55,26 @@
     "empty": {
       "description": "可以提问、继续本地工作，或者开启一个新线程。"
     },
+    "firstRun": {
+      "aria": "首次启动引导",
+      "title": "把图表拼成一张科研图版",
+      "description": "生成图表或图片后，可以在右侧 Visual workspace 里手动排版并导出拼图。",
+      "steps": {
+        "generate": {
+          "title": "先生成图",
+          "body": "先准备好要组合的图表或图片。"
+        },
+        "collage": {
+          "title": "New Collage",
+          "body": "打开右侧工作台，点 New Collage，再用 Add 加入资产。"
+        },
+        "export": {
+          "title": "Export PNG",
+          "body": "排好版后点 Export PNG，导出当前拼图。"
+        }
+      },
+      "dismiss": "知道了"
+    },
     "header": {
       "toggleSidebar": "切换侧边栏"
     },

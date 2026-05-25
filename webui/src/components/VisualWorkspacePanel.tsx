@@ -57,6 +57,7 @@ import type {
   FigureModel,
   FigureObjectRef,
   FillSpec,
+  CollageItem,
   CollageSpec,
   SelectedChartElement,
   VisualAnchor,
@@ -68,6 +69,7 @@ const WORKSPACE_STORAGE_KEY = "scidavinci.workspace.layout";
 const MIN_WIDTH = 260;
 const MAX_WIDTH = 640;
 const DEFAULT_WIDTH = 336;
+const COLLAGE_EXPORT_SCALE = 2;
 
 function readLayoutPrefs(): { width: number; collapsed: boolean } {
   if (typeof window === "undefined") return { width: DEFAULT_WIDTH, collapsed: false };
@@ -352,15 +354,16 @@ export function VisualWorkspacePanel() {
             <div className="flex items-center gap-1">
               <Button
                 type="button"
-                size="icon"
-                variant="ghost"
+                size="sm"
+                variant={activeAsset.kind === "collage" ? "default" : "outline"}
                 onClick={exportActiveAsset}
                 disabled={exporting}
-                className="h-7 w-7 rounded-full"
+                className="h-7 gap-1.5 px-2 text-[11px]"
                 aria-label="Export current visual"
                 title="Export current visual"
               >
                 <Download className="h-3.5 w-3.5" />
+                Export PNG
               </Button>
             </div>
           </div>
@@ -515,9 +518,9 @@ export function VisualWorkspacePanel() {
           <div className="mb-2 flex items-center gap-2">
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="h-7 gap-1 text-[11px]"
+              className="h-7 gap-1 border-primary/35 bg-primary/5 text-[11px] text-primary hover:bg-primary/10 hover:text-primary"
               onClick={() => createCollage(`Collage ${assets.length + 1}`)}
             >
               <Plus className="h-3.5 w-3.5" />
@@ -554,7 +557,11 @@ export function VisualWorkspacePanel() {
                     elementStyles={elementStyles}
                   />
                 ) : asset.kind === "collage" ? (
-                  <CollageThumbnail collage={asset.collage} assets={assets} />
+                  <CollageThumbnail
+                    collage={asset.collage}
+                    assets={assets}
+                    elementStyles={elementStyles}
+                  />
                 ) : (
                   <div className="grid h-full w-full place-items-center text-[11px] font-medium text-muted-foreground">
                     Chart
@@ -1448,47 +1455,115 @@ function BoxThumbnail({ config }: { config: ChartConfig }) {
 function CollageThumbnail({
   collage,
   assets,
+  elementStyles,
 }: {
   collage?: CollageSpec;
   assets: VisualAsset[];
+  elementStyles: Map<string, ChartElementStyle>;
 }) {
   if (!collage || collage.items.length === 0) {
     return (
-      <div className="grid h-full w-full place-items-center text-[11px] font-medium text-muted-foreground">
-        Collage
+      <div className="grid h-full w-full place-items-center bg-background p-2">
+        <div className="grid h-full w-full place-items-center rounded-sm border border-dashed border-muted-foreground/30 text-[11px] font-medium text-muted-foreground">
+          Collage
+        </div>
       </div>
     );
   }
-  const imageMap = new Map(
-    assets
-      .filter((a) => a.kind === "image" && a.url)
-      .map((a) => [a.id, a.url!]),
-  );
-  const previewItems = collage.items.slice(0, 4);
+  const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+  const { canvasWidth: w, canvasHeight: h, layout, gap } = collage;
+  const effectiveItems =
+    layout !== "freeform"
+      ? computeTemplatePositions(collage.items, layout, gap ?? 12, w, h)
+      : collage.items;
+  const sortedItems = [...effectiveItems].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
   return (
-    <div className="grid h-full w-full grid-cols-2 gap-0.5 p-1">
-      {previewItems.map((item, index) => {
-        const url = imageMap.get(item.assetId);
+    <div
+      className="relative h-full w-full overflow-hidden bg-background"
+      style={collageThumbnailBackgroundStyle(collage.background)}
+    >
+      {sortedItems.map((item, index) => {
+        const asset = assetMap.get(item.assetId);
+        const style: CSSProperties = {
+          left: `${(item.x / w) * 100}%`,
+          top: `${(item.y / h) * 100}%`,
+          width: `${(item.width / w) * 100}%`,
+          height: `${(item.height / h) * 100}%`,
+          transform: item.rotation ? `rotate(${item.rotation}deg)` : undefined,
+          zIndex: item.zIndex ?? index,
+        };
         return (
-          <div key={`${item.assetId}-${index}`} className="overflow-hidden rounded-sm bg-muted/60">
-            {url ? (
+          <div
+            key={`${item.assetId}-${index}`}
+            className="absolute overflow-hidden rounded-[2px] bg-muted/60"
+            style={style}
+          >
+            {asset?.kind === "image" && asset.url ? (
               <img
-                src={url}
+                src={asset.url}
                 alt=""
                 draggable={false}
-                className="h-full w-full object-cover"
+                className="h-full w-full"
+                style={{ objectFit: item.fit }}
               />
-            ) : null}
+            ) : asset?.kind === "chart" && asset.chartConfig ? (
+              <ThumbnailFittedChart
+                asset={asset}
+                config={asset.chartConfig}
+                item={item}
+                elementStyles={elementStyles}
+              />
+            ) : (
+              <div className="grid h-full w-full place-items-center text-[9px] text-muted-foreground">
+                ?
+              </div>
+            )}
           </div>
         );
       })}
-      {collage.items.length > 4 ? (
-        <div className="grid place-items-center text-[10px] text-muted-foreground">
-          +{collage.items.length - 4}
-        </div>
-      ) : null}
     </div>
   );
+}
+
+function ThumbnailFittedChart({
+  asset,
+  config,
+  item,
+  elementStyles,
+}: {
+  asset: VisualAsset;
+  config: ChartConfig;
+  item: CollageItem;
+  elementStyles: Map<string, ChartElementStyle>;
+}) {
+  const aspect = ratioNumber(config.aspectRatio ?? "4:3");
+  const boxRatio = item.width / item.height;
+  const cover = item.fit === "cover";
+  const fillByWidth = cover ? aspect < boxRatio : aspect > boxRatio;
+  const style: CSSProperties = fillByWidth
+    ? { width: "100%", aspectRatio: String(aspect) }
+    : { height: "100%", aspectRatio: String(aspect) };
+
+  return (
+    <div className="grid h-full w-full place-items-center overflow-hidden bg-card">
+      <div className="shrink-0" style={style}>
+        <ChartThumbnail
+          assetId={asset.id}
+          config={config}
+          elementStyles={elementStyles}
+        />
+      </div>
+    </div>
+  );
+}
+
+function collageThumbnailBackgroundStyle(background?: FillSpec): CSSProperties {
+  if (!background || background.transparent) return { backgroundColor: "#ffffff" };
+  const color = background.color ?? "#ffffff";
+  const opacity = background.opacity ?? 1;
+  return {
+    backgroundColor: opacity < 1 ? hexToRgba(color, opacity) : color,
+  };
 }
 
 const DEFAULT_THUMB_COLORS = [
@@ -1605,6 +1680,68 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+function fittedSourceRect(
+  sourceW: number,
+  sourceH: number,
+  boxW: number,
+  boxH: number,
+  fit: "contain" | "cover",
+): {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+  dx: number;
+  dy: number;
+  dw: number;
+  dh: number;
+} {
+  const sourceRatio = sourceW / sourceH;
+  const boxRatio = boxW / boxH;
+
+  if (fit === "cover") {
+    if (sourceRatio > boxRatio) {
+      const sh = sourceH;
+      const sw = sh * boxRatio;
+      return { sx: (sourceW - sw) / 2, sy: 0, sw, sh, dx: 0, dy: 0, dw: boxW, dh: boxH };
+    }
+    const sw = sourceW;
+    const sh = sw / boxRatio;
+    return { sx: 0, sy: (sourceH - sh) / 2, sw, sh, dx: 0, dy: 0, dw: boxW, dh: boxH };
+  }
+
+  if (sourceRatio > boxRatio) {
+    const dw = boxW;
+    const dh = dw / sourceRatio;
+    return { sx: 0, sy: 0, sw: sourceW, sh: sourceH, dx: 0, dy: (boxH - dh) / 2, dw, dh };
+  }
+
+  const dh = boxH;
+  const dw = dh * sourceRatio;
+  return { sx: 0, sy: 0, sw: sourceW, sh: sourceH, dx: (boxW - dw) / 2, dy: 0, dw, dh };
+}
+
+function drawFittedCanvasImage(
+  ctx: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  sourceW: number,
+  sourceH: number,
+  item: CollageItem,
+): void {
+  const rect = fittedSourceRect(sourceW, sourceH, item.width, item.height, item.fit);
+  ctx.drawImage(
+    source,
+    rect.sx,
+    rect.sy,
+    rect.sw,
+    rect.sh,
+    item.x + rect.dx,
+    item.y + rect.dy,
+    rect.dw,
+    rect.dh,
+  );
+}
+
 async function exportCollageToPng(
   collage: NonNullable<VisualAsset["collage"]>,
   assets: VisualAsset[],
@@ -1613,10 +1750,13 @@ async function exportCollageToPng(
 ): Promise<void> {
   const { canvasWidth: w, canvasHeight: h, items, background, layout, gap } = collage;
   const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = Math.round(w * COLLAGE_EXPORT_SCALE);
+  canvas.height = Math.round(h * COLLAGE_EXPORT_SCALE);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas is unavailable");
+  ctx.scale(COLLAGE_EXPORT_SCALE, COLLAGE_EXPORT_SCALE);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
 
   // Background
   if (!background?.transparent) {
@@ -1649,48 +1789,24 @@ async function exportCollageToPng(
           ctx.rotate((item.rotation * Math.PI) / 180);
           ctx.translate(-cx, -cy);
         }
-        if (item.fit === "cover") {
-          const imgRatio = img.naturalWidth / img.naturalHeight;
-          const boxRatio = item.width / item.height;
-          let sw: number;
-          let sh: number;
-          if (imgRatio > boxRatio) {
-            sh = img.naturalHeight;
-            sw = sh * boxRatio;
-          } else {
-            sw = img.naturalWidth;
-            sh = sw / boxRatio;
-          }
-          const sx = (img.naturalWidth - sw) / 2;
-          const sy = (img.naturalHeight - sh) / 2;
-          ctx.drawImage(img, sx, sy, sw, sh, item.x, item.y, item.width, item.height);
-        } else {
-          const imgRatio = img.naturalWidth / img.naturalHeight;
-          const boxRatio = item.width / item.height;
-          let dw: number;
-          let dh: number;
-          if (imgRatio > boxRatio) {
-            dw = item.width;
-            dh = dw / imgRatio;
-          } else {
-            dh = item.height;
-            dw = dh * imgRatio;
-          }
-          const dx = item.x + (item.width - dw) / 2;
-          const dy = item.y + (item.height - dh) / 2;
-          ctx.drawImage(img, dx, dy, dw, dh);
-        }
+        drawFittedCanvasImage(ctx, img, img.naturalWidth, img.naturalHeight, item);
         ctx.restore();
       } catch {
         drawPlaceholder(ctx, item, asset.title);
       }
     } else if (asset.chartConfig) {
-      // Chart asset — render at default export resolution, then scale to fit
+      // Chart asset — keep its normal export layout proportions, then fit that
+      // high-resolution canvas into the collage cell. Rendering directly at the
+      // cell's small logical size makes fixed chart labels/margins look oversized.
       try {
         const chartCanvas = await renderChartToCanvas(
           asset.id,
           asset.chartConfig,
           elementStyles,
+          undefined,
+          undefined,
+          undefined,
+          COLLAGE_EXPORT_SCALE,
         );
         ctx.save();
         if (item.rotation) {
@@ -1700,7 +1816,7 @@ async function exportCollageToPng(
           ctx.rotate((item.rotation * Math.PI) / 180);
           ctx.translate(-cx, -cy);
         }
-        ctx.drawImage(chartCanvas, item.x, item.y, item.width, item.height);
+        drawFittedCanvasImage(ctx, chartCanvas, chartCanvas.width, chartCanvas.height, item);
         ctx.restore();
       } catch {
         drawPlaceholder(ctx, item, asset.title);
@@ -1942,9 +2058,10 @@ async function renderChartToCanvas(
   figure: FigureModel = normalizeFigureModel(config),
   targetWidth?: number,
   targetHeight?: number,
+  pixelRatio?: number,
 ): Promise<HTMLCanvasElement> {
   const canvas = document.createElement("canvas");
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = pixelRatio ?? (window.devicePixelRatio || 1);
   const aspect = ratioNumber(figure.layout?.aspectRatio ?? config.aspectRatio ?? "4:3");
   const logicalW = targetWidth ?? figure.exportSettings?.width ?? 1600;
   const logicalH = targetHeight ?? figure.exportSettings?.height ?? Math.round(logicalW / aspect);

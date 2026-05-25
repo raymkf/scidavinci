@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AskUserPrompt } from "@/components/thread/AskUserPrompt";
+import { FirstRunGuide } from "@/components/thread/FirstRunGuide";
 import { ThreadComposer } from "@/components/thread/ThreadComposer";
 import { ThreadHeader } from "@/components/thread/ThreadHeader";
 import { StreamErrorNotice } from "@/components/thread/StreamErrorNotice";
@@ -233,6 +234,7 @@ export function ThreadShell({
       <p className="max-w-[28rem] text-[13px] leading-6 text-muted-foreground">
         {t("thread.empty.description")}
       </p>
+      <FirstRunGuide />
     </div>
   );
 

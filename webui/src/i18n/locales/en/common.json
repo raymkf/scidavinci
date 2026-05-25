@@ -55,6 +55,26 @@
     "empty": {
       "description": "Ask questions, continue local work, or start a new thread."
     },
+    "firstRun": {
+      "aria": "First run guide",
+      "title": "Turn charts into a figure panel",
+      "description": "After generating charts or images, use the Visual workspace on the right to arrange and export a collage manually.",
+      "steps": {
+        "generate": {
+          "title": "Generate visuals",
+          "body": "Create or upload the charts and images you want to combine."
+        },
+        "collage": {
+          "title": "New Collage",
+          "body": "Open the right workspace, click New Collage, then use Add to place assets."
+        },
+        "export": {
+          "title": "Export PNG",
+          "body": "Arrange the panel and use Export PNG when the layout is ready."
+        }
+      },
+      "dismiss": "Got it"
+    },
     "header": {
       "toggleSidebar": "Toggle sidebar"
     },

@@ -202,14 +202,14 @@ export function CollageToolbar({
         {/* Export */}
         <Button
           type="button"
-          variant="ghost"
+          variant={collage.items.length > 0 ? "default" : "outline"}
           size="sm"
           className="h-7 gap-1 text-[11px]"
           onClick={onExport}
           disabled={exporting || collage.items.length === 0}
         >
           <Download className="h-3.5 w-3.5" />
-          Export
+          Export PNG
         </Button>
       </div>
     </div>
