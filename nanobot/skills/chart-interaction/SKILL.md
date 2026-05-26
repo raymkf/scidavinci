@@ -83,6 +83,15 @@ Priority rule:
 - If the requested figure type is supported by `chart-json`, output `chart-json`
   as the primary result. Supported interactive types include bar, line, area,
   pie, volcano, and box.
+- For broad requests such as "visualize this table" or "可视化一下这个表格",
+  choose the single most appropriate chart type and output exactly one
+  `chart-json` chart by default. For a box-plot summary table, choose one box
+  chart. Do not create extra exploratory charts unless the user explicitly asks
+  for multiple charts, alternatives, or a dashboard.
+- When using the `plot_dataset` tool, include the returned `chart-json` code
+  block verbatim in the final assistant response so the Web UI can render it in
+  the chat. Do not leave generated charts only as files, assets, or tool
+  results.
 - Do not switch to matplotlib/Python just because the request is biomedical or
   "publication quality"; the frontend renderer enforces publication styling.
 - Use matplotlib only for currently unsupported interactive figure families
@@ -95,7 +104,8 @@ Priority rule:
   short natural-language reason for each chart before or after it: what data it
   visualizes, why it is useful for the user's request, and the main takeaway.
 - Avoid generating multiple alternative charts unless the user asks for
-  alternatives or each chart has a distinct stated purpose.
+  alternatives or each chart has a distinct stated purpose. When in doubt,
+  produce one chart and a concise explanation.
 
 When you want to display data as an interactive chart, output a fenced code block with language `chart-json`:
 

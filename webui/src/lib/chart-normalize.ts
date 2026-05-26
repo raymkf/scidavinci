@@ -162,7 +162,7 @@ export function normalizeFigureModel(config: ChartConfig): FigureModel {
     caption: {
       id: "caption",
       text: toText(config.caption) ?? toText(config.description),
-      visible: Boolean(config.caption || config.description),
+      visible: false,
       position: "bottom",
       ...(existing?.caption ?? {}),
     },

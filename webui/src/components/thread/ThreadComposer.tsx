@@ -35,7 +35,6 @@ import type { SendImage } from "@/hooks/useScidavinciStream";
 import { cn } from "@/lib/utils";
 
 const MAX_DOCUMENTS_PER_MESSAGE = 5;
-const MAX_INLINE_DOCUMENT_BYTES = 1 * 1024 * 1024;
 
 /** Server-side ``_DOCUMENT_MIME_ALLOWED`` mirror. */
 const DOC_MIME_TYPES: ReadonlySet<string> = new Set([
@@ -44,6 +43,8 @@ const DOC_MIME_TYPES: ReadonlySet<string> = new Set([
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.ms-excel",
   "application/vnd.oasis.opendocument.spreadsheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/json",
   "application/pdf",
   "text/plain",
@@ -55,24 +56,19 @@ const DOC_MIME_BY_EXT: Readonly<Record<string, string>> = {
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ".xls": "application/vnd.ms-excel",
   ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".json": "application/json",
   ".pdf": "application/pdf",
   ".txt": "text/plain",
 };
-
-const INLINE_DOCUMENT_EXTENSIONS: ReadonlySet<string> = new Set([
-  ".csv",
-  ".tsv",
-  ".json",
-  ".txt",
-]);
 
 /** ``<input accept>``: aligned with the server's MIME whitelist. SVG is
  * deliberately excluded to avoid an embedded-script XSS surface. */
 const ACCEPT_ATTR = [
   "image/png,image/jpeg,image/webp,image/gif",
   ".csv,.tsv,.xlsx,.xls,.ods",
-  ".json,.pdf,.txt",
+  ".docx,.pptx,.json,.pdf,.txt",
 ].join(",");
 
 function formatBytes(n: number): string {
@@ -96,7 +92,6 @@ interface DocumentAttachment {
   id: string;
   file: File;
   dataUrl: string;
-  inlineText?: string;
 }
 
 interface ThreadComposerProps {
@@ -161,12 +156,6 @@ export function ThreadComposer({
     });
   }, []);
 
-  const readInlineDocumentText = useCallback(async (file: File): Promise<string | undefined> => {
-    if (!INLINE_DOCUMENT_EXTENSIONS.has(fileExtension(file.name))) return undefined;
-    if (file.size > MAX_INLINE_DOCUMENT_BYTES) return undefined;
-    return file.text();
-  }, []);
-
   const enqueueDocs = useCallback(
     async (files: File[]) => {
       if (files.length === 0) return;
@@ -181,9 +170,8 @@ export function ThreadComposer({
       for (const file of toAdd) {
         try {
           const dataUrl = await readFileAsDataUrl(file);
-          const inlineText = await readInlineDocumentText(file);
           docsIdCounter.current += 1;
-          results.push({ id: `doc-${docsIdCounter.current}`, file, dataUrl, inlineText });
+          results.push({ id: `doc-${docsIdCounter.current}`, file, dataUrl });
         } catch {
           setInlineError(`Failed to read ${file.name}`);
         }
@@ -192,7 +180,7 @@ export function ThreadComposer({
         setDocs((prev) => [...prev, ...results]);
       }
     },
-    [readFileAsDataUrl, readInlineDocumentText],
+    [readFileAsDataUrl],
   );
 
   const formatRejection = useCallback(
@@ -404,15 +392,6 @@ export function ThreadComposer({
       contextBlocks.push(`[Selected Visual Anchors]\n${visualContext}`);
     }
 
-    const inlineDocBlocks = readyDocs
-      .filter((d) => typeof d.inlineText === "string" && d.inlineText.length > 0)
-      .map((d) => `[Uploaded File: ${d.file.name}]\n\`\`\`${fileExtension(d.file.name).slice(1) || "text"}\n${d.inlineText}\n\`\`\``);
-    if (inlineDocBlocks.length > 0) {
-      contextBlocks.push(
-        `${inlineDocBlocks.join("\n\n")}\n\nUse the uploaded file content above for this request. If the user asks for a chart or visualization, output a fenced \`\`\`chart-json code block for the WebUI interactive chart renderer; do not create a standalone HTML/Plotly file unless the user explicitly asks for an HTML file.`,
-      );
-    }
-
     // Wire content = structured context + user text. Chat bubble = user text only.
     const enrichedContent = contextBlocks.length > 0
       ? `${contextBlocks.join("\n\n")}\n\n${trimmed}`
@@ -430,9 +409,7 @@ export function ThreadComposer({
         : undefined;
     const docPayload: OutboundMedia[] | undefined =
       readyDocs.length > 0
-        ? readyDocs
-          .filter((d) => !d.inlineText)
-          .map((d) => ({
+        ? readyDocs.map((d) => ({
             data_url: d.dataUrl,
             name: d.file.name,
           }))

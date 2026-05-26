@@ -181,21 +181,6 @@ export function VisualWorkspacePanel() {
     setCollageSelectedItem(null);
   }, [activeAsset?.id]);
 
-  // Navigate chat to source message when a chart element is selected in the workspace
-  useEffect(() => {
-    if (
-      activeFigureObject?.kind === "mark" &&
-      activeAsset?.kind === "chart" &&
-      activeAsset.sourceMessageId
-    ) {
-      window.dispatchEvent(
-        new CustomEvent("scidavinci:navigateToMessage", {
-          detail: { messageId: activeAsset.sourceMessageId },
-        }),
-      );
-    }
-  }, [activeFigureObject, activeAsset]);
-
   const activeAnchors = useMemo(
     () => anchors.filter((item) => item.assetId === activeAsset?.id),
     [activeAsset?.id, anchors],

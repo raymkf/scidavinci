@@ -1,0 +1,90 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 1760 >>
+stream
+BT
+/F1 11 Tf
+50 760 Td
+14 TL
+(SciDaVinci demo background: cytokine box plot) Tj
+T*
+() Tj
+T*
+(Experiment overview:) Tj
+T*
+(This synthetic demo describes an in vitro macrophage inflammation assay.) Tj
+T*
+(Cells were stimulated with LPS for 24 hours, then treated with candidate drugs.) Tj
+T*
+(The table summarizes IL-6 secretion in ng/mL for each condition.) Tj
+T*
+() Tj
+T*
+(Groups:) Tj
+T*
+(Control: LPS stimulation without drug treatment.) Tj
+T*
+(Low-dose Drug A: LPS plus a low dose of Drug A.) Tj
+T*
+(High-dose Drug A: LPS plus a high dose of Drug A.) Tj
+T*
+(Drug B: LPS plus a standard dose of a positive-control drug.) Tj
+T*
+() Tj
+T*
+(Biological context:) Tj
+T*
+(IL-6 is a pro-inflammatory cytokine. Higher values usually indicate a stronger inflammatory response.) Tj
+T*
+(Drug A is a candidate immunomodulator. Early pilot observations suggest high-dose Drug A may trigger cellular stress.) Tj
+T*
+(Drug B is expected to suppress or maintain low IL-6 levels relative to strong inflammatory activation.) Tj
+T*
+() Tj
+T*
+(How to interpret clicked chart elements:) Tj
+T*
+(A clicked High-dose Drug A box with a higher median and wider IQR suggests stronger and more variable IL-6 induction.) Tj
+T*
+(Clicked High-dose Drug A outliers may represent samples with unusually strong stress or inflammatory activation.) Tj
+T*
+(A clicked Drug B box near or below Control supports the expected positive-control behavior.) Tj
+T*
+(A clicked Control box provides the LPS-only baseline for comparing all treated groups.) Tj
+T*
+() Tj
+T*
+(Suggested user prompt:) Tj
+T*
+(Use box_cytokine_summary.csv and this PDF background. Create exactly one interactive box plot.) Tj
+T*
+(Then, when I click a chart element, explain the selected element using the biological background.) Tj
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000000317 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+2129
+%%EOF

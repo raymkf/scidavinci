@@ -152,19 +152,21 @@ pip install -e .
 scidavinci onboard
 ```
 
-在 `~/.scidavinci/config.json` 中配置模型，例如 OpenRouter：
+在 `~/.scidavinci/config.json` 中配置模型。当前最推荐的模型是
+DeepSeek V4 Flash（`deepseek-v4-flash`）：
 
 ```json
 {
   "providers": {
-    "openrouter": {
-      "apiKey": "<your-openrouter-api-key>"
+    "deepseek": {
+      "apiKey": "<your-deepseek-api-key>",
+      "apiBase": "https://api.deepseek.com"
     }
   },
   "agents": {
     "defaults": {
-      "provider": "openrouter",
-      "model": "anthropic/claude-opus-4-6"
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash"
     }
   }
 }
@@ -394,19 +396,21 @@ Initialize the local workspace:
 scidavinci onboard
 ```
 
-Configure a model in `~/.scidavinci/config.json`, for example with OpenRouter:
+Configure a model in `~/.scidavinci/config.json`. The recommended model is
+DeepSeek V4 Flash (`deepseek-v4-flash`):
 
 ```json
 {
   "providers": {
-    "openrouter": {
-      "apiKey": "<your-openrouter-api-key>"
+    "deepseek": {
+      "apiKey": "<your-deepseek-api-key>",
+      "apiBase": "https://api.deepseek.com"
     }
   },
   "agents": {
     "defaults": {
-      "provider": "openrouter",
-      "model": "anthropic/claude-opus-4-6"
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash"
     }
   }
 }
