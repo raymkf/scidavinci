@@ -1102,6 +1102,14 @@ class AgentLoop:
         has_text = isinstance(msg.content, str) and msg.content.strip()
         if not pending_ask_id and (has_text or media_paths):
             extra: dict[str, Any] = {"media": list(media_paths)} if media_paths else {}
+            ui_content = msg.metadata.get("ui_content")
+            if isinstance(ui_content, str):
+                extra["ui_content"] = ui_content
+            ui_media = msg.metadata.get("ui_media")
+            if isinstance(ui_media, list):
+                clean_ui_media = [p for p in ui_media if isinstance(p, str) and p]
+                if clean_ui_media:
+                    extra["ui_media"] = clean_ui_media
             text = msg.content if isinstance(msg.content, str) else ""
             session.add_message("user", text, **extra)
             self._mark_pending_user_turn(session)

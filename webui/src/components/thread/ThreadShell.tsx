@@ -12,6 +12,7 @@ import { VisualWorkspacePanel } from "@/components/VisualWorkspacePanel";
 import { ChartSelectionProvider, useChartSelection } from "@/contexts/ChartSelectionContext";
 import { VisualWorkspaceProvider, useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
 import { useScidavinciStream, type SendImage } from "@/hooks/useScidavinciStream";
+import { modelLanguageInstruction, useModelLanguage } from "@/hooks/useModelLanguage";
 import { useSessionHistory } from "@/hooks/useSessions";
 import { parseChartActionsFromContent } from "@/lib/chart-actions";
 import { resolveSemanticSelectionAction } from "@/lib/chart-semantic-selection";
@@ -99,6 +100,7 @@ export function ThreadShell({
   const historyKey = session?.key ?? null;
   const { messages: historical, loading } = useSessionHistory(historyKey);
   const { client, modelName } = useClient();
+  const [modelLanguage, setModelLanguage] = useModelLanguage();
   const [booting, setBooting] = useState(false);
   const pendingFirstRef = useRef<PendingFirstMessage | null>(null);
   const messageCacheRef = useRef<Map<string, UIMessage[]>>(new Map());
@@ -207,7 +209,12 @@ export function ThreadShell({
       ...(pending.images ? pending.images.map((i) => i.media) : []),
       ...(pending.documents ?? []),
     ];
-    client.sendMessage(chatId, pending.content, wireMedia.length > 0 ? wireMedia : undefined);
+    client.sendMessage(
+      chatId,
+      pending.content,
+      wireMedia.length > 0 ? wireMedia : undefined,
+      pending.displayContent ?? pending.content,
+    );
     const imagePreviews = pending.images?.map((i) => i.preview);
     const documentPreviews = pending.documents?.map((d) =>
       toMediaAttachment({ url: d.data_url, name: d.name }),
@@ -235,14 +242,39 @@ export function ThreadShell({
     ) => {
       if (booting) return;
       setBooting(true);
-      pendingFirstRef.current = { content, images, documents, displayContent };
+      const languageInstruction = modelLanguageInstruction(modelLanguage);
+      const enrichedContent = languageInstruction
+        ? `[Preferred Response Language]\n${languageInstruction}\n\n${content}`
+        : content;
+      pendingFirstRef.current = {
+        content: enrichedContent,
+        images,
+        documents,
+        displayContent: displayContent ?? content,
+      };
       const newId = await onNewChat();
       if (!newId) {
         pendingFirstRef.current = null;
         setBooting(false);
       }
     },
-    [booting, onNewChat],
+    [booting, modelLanguage, onNewChat],
+  );
+
+  const sendWithModelLanguage = useCallback(
+    (
+      content: string,
+      images?: SendImage[],
+      documents?: OutboundMedia[],
+      displayContent?: string,
+    ) => {
+      const languageInstruction = modelLanguageInstruction(modelLanguage);
+      const enrichedContent = languageInstruction
+        ? `[Preferred Response Language]\n${languageInstruction}\n\n${content}`
+        : content;
+      send(enrichedContent, images, documents, displayContent ?? content);
+    },
+    [modelLanguage, send],
   );
 
   const emptyState = loading ? (
@@ -281,6 +313,8 @@ export function ThreadShell({
               title={title}
               onToggleSidebar={onToggleSidebar}
               onGoHome={onGoHome}
+              modelLanguage={modelLanguage}
+              onModelLanguageChange={setModelLanguage}
               hideSidebarToggleOnDesktop={hideSidebarToggleOnDesktop}
             />
             <ThreadViewport
@@ -299,7 +333,7 @@ export function ThreadShell({
                     <AskUserPrompt
                       question={pendingAsk.question}
                       buttons={pendingAsk.buttons}
-                      onAnswer={send}
+                      onAnswer={sendWithModelLanguage}
                     />
                   ) : null}
                   {session ? (
@@ -314,6 +348,7 @@ export function ThreadShell({
                       modelLabel={toModelBadgeLabel(modelName)}
                       variant={showHeroComposer ? "hero" : "thread"}
                       uploadedDatasets={uploadedDatasets}
+                      modelLanguage={modelLanguage}
                     />
                   ) : (
                     <ThreadComposer

@@ -146,5 +146,6 @@ export type Outbound =
       type: "message";
       chat_id: string;
       content: string;
+      display_content?: string;
       media?: OutboundMedia[];
     };

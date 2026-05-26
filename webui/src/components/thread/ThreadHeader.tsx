@@ -1,6 +1,8 @@
 import { PanelLeftOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { ModelLanguageSwitcher } from "@/components/thread/ModelLanguageSwitcher";
+import type { ModelLanguage } from "@/hooks/useModelLanguage";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +10,8 @@ interface ThreadHeaderProps {
   title: string;
   onToggleSidebar: () => void;
   onGoHome: () => void;
+  modelLanguage: ModelLanguage;
+  onModelLanguageChange: (language: ModelLanguage) => void;
   hideSidebarToggleOnDesktop?: boolean;
 }
 
@@ -15,6 +19,8 @@ export function ThreadHeader({
   title,
   onToggleSidebar,
   onGoHome,
+  modelLanguage,
+  onModelLanguageChange,
   hideSidebarToggleOnDesktop = false,
 }: ThreadHeaderProps) {
   const { t } = useTranslation();
@@ -47,6 +53,11 @@ export function ThreadHeader({
           <span className="max-w-[min(60vw,32rem)] truncate">{title}</span>
         </button>
       </div>
+
+      <ModelLanguageSwitcher
+        value={modelLanguage}
+        onChange={onModelLanguageChange}
+      />
 
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-full h-4" />
     </div>

@@ -22,6 +22,10 @@ import {
   type PlotDatasetChoice,
   type PlotSelection,
 } from "@/components/thread/PlotSelectionPanel";
+import {
+  modelLanguageInstruction,
+  type ModelLanguage,
+} from "@/hooks/useModelLanguage";
 import { Button } from "@/components/ui/button";
 import { VisualAnchorChips } from "@/components/VisualAnchorChips";
 import {
@@ -112,6 +116,7 @@ interface ThreadComposerProps {
   modelLabel?: string | null;
   variant?: "thread" | "hero";
   uploadedDatasets?: PlotDatasetChoice[];
+  modelLanguage?: ModelLanguage;
 }
 
 export function ThreadComposer({
@@ -121,6 +126,7 @@ export function ThreadComposer({
   modelLabel = null,
   variant = "thread",
   uploadedDatasets = [],
+  modelLanguage = "auto",
 }: ThreadComposerProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
@@ -296,6 +302,10 @@ export function ThreadComposer({
     // Build structured context for the model (never shown to the user).
     // This is prepended to the wire content but excluded from the chat bubble.
     const contextBlocks: string[] = [];
+    const languageInstruction = modelLanguageInstruction(modelLanguage);
+    if (languageInstruction) {
+      contextBlocks.push(`[Preferred Response Language]\n${languageInstruction}`);
+    }
 
     // Active asset context (the user's edit target)
     if (activeAsset) {
@@ -477,6 +487,7 @@ export function ThreadComposer({
     clearAnchors,
     applyActions,
     activeAsset,
+    modelLanguage,
   ]);
 
   const submitPlotSelections = useCallback((selections: PlotSelection[]) => {
@@ -493,6 +504,7 @@ export function ThreadComposer({
         : undefined;
     const payload = {
       intent: "manual_plot_selection",
+      preferredResponseLanguage: modelLanguageInstruction(modelLanguage),
       selectedCharts: selections.map((selection) => ({
         fileName: selection.dataset.name,
         datasetSource: selection.dataset.source,
@@ -514,7 +526,7 @@ export function ThreadComposer({
     setInlineError(null);
     setDocs((prev) => prev.filter((doc) => !selectedAttached.has(doc.file.name)));
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [disabled, encoding, onSend, readyDocs]);
+  }, [disabled, encoding, modelLanguage, onSend, readyDocs]);
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {

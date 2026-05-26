@@ -62,6 +62,52 @@ def _append_buttons_as_text(text: str, buttons: list[list[str]]) -> str:
     return f"{text}\n\n{fallback}" if text else fallback
 
 
+def _strip_webui_hidden_context(content: str) -> str:
+    """Best-effort cleanup for older persisted WebUI user turns.
+
+    Older websocket sessions stored model-facing content directly, so replaying
+    history could expose extracted file text, dataset profiles, or structured
+    UI context inside the user's visible chat bubble. New sessions use
+    ``ui_content``; this fallback keeps legacy history readable.
+    """
+    if not content:
+        return content
+    hidden_prefixes = (
+        "[File:",
+        "[Uploaded Datasets]",
+        "[Manual Plot Selection]",
+        "[Active Edit Target]",
+        "[Selected Chart Elements]",
+        "[Interactive Figure State]",
+        "[Selected Visual Anchors]",
+    )
+    if content.lstrip().startswith(hidden_prefixes):
+        return ""
+    markers = [
+        "\n\n[File:",
+        "\n[File:",
+        "\n\n[Uploaded Datasets]",
+        "\n[Uploaded Datasets]",
+        "\n\n[Manual Plot Selection]",
+        "\n[Manual Plot Selection]",
+        "\n\n[Active Edit Target]",
+        "\n[Active Edit Target]",
+        "\n\n[Selected Chart Elements]",
+        "\n[Selected Chart Elements]",
+        "\n\n[Interactive Figure State]",
+        "\n[Interactive Figure State]",
+        "\n\n[Selected Visual Anchors]",
+        "\n[Selected Visual Anchors]",
+    ]
+    cut = len(content)
+    for marker in markers:
+        index = content.find(marker)
+        if index >= 0:
+            cut = min(cut, index)
+    cleaned = content[:cut].strip()
+    return cleaned if cleaned else content
+
+
 class WebSocketConfig(Base):
     """WebSocket server channel configuration.
 
@@ -811,8 +857,17 @@ class WebSocketChannel(BaseChannel):
         for msg in messages:
             if not isinstance(msg, dict):
                 continue
-            media = msg.get("media")
+            ui_content = msg.get("ui_content")
+            if isinstance(ui_content, str):
+                msg["content"] = ui_content
+            elif msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                msg["content"] = _strip_webui_hidden_context(msg["content"])
+
+            msg.pop("ui_content", None)
+
+            media = msg.get("ui_media") or msg.get("media")
             if not isinstance(media, list) or not media:
+                msg.pop("ui_media", None)
                 continue
             urls: list[dict[str, str]] = []
             for entry in media:
@@ -824,8 +879,9 @@ class WebSocketChannel(BaseChannel):
                 urls.append({"url": signed, "name": Path(entry).name})
             if urls:
                 msg["media_urls"] = urls
-            # Always drop the raw paths from the wire payload.
+            # Always drop raw paths / UI-only storage fields from the wire payload.
             msg.pop("media", None)
+            msg.pop("ui_media", None)
 
     def _sign_media_path(self, abs_path: Path) -> str | None:
         """Return a ``/api/media/<sig>/<payload>`` URL for *abs_path*, or
@@ -1211,11 +1267,15 @@ class WebSocketChannel(BaseChannel):
         if t == "message":
             cid = envelope.get("chat_id")
             content = envelope.get("content")
+            display_content = envelope.get("display_content")
             if not _is_valid_chat_id(cid):
                 await self._send_event(connection, "error", detail="invalid chat_id")
                 return
             if not isinstance(content, str):
                 await self._send_event(connection, "error", detail="missing content")
+                return
+            if display_content is not None and not isinstance(display_content, str):
+                await self._send_event(connection, "error", detail="invalid display_content")
                 return
 
             raw_media = envelope.get("media")
@@ -1247,7 +1307,11 @@ class WebSocketChannel(BaseChannel):
                 chat_id=cid,
                 content=content,
                 media=media_paths or None,
-                metadata={"remote": getattr(connection, "remote_address", None)},
+                metadata={
+                    "remote": getattr(connection, "remote_address", None),
+                    **({"ui_content": display_content} if display_content is not None else {}),
+                    **({"ui_media": list(media_paths)} if media_paths else {}),
+                },
             )
             return
         await self._send_event(connection, "error", detail=f"unknown type: {t!r}")

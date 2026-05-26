@@ -196,7 +196,7 @@ export class SciDaVinciClient {
     }
   }
 
-  sendMessage(chatId: string, content: string, media?: OutboundMedia[]): void {
+  sendMessage(chatId: string, content: string, media?: OutboundMedia[], displayContent?: string): void {
     this.knownChats.add(chatId);
     this.lastOutboundMedia = media?.map((m) => ({
       mime: dataUrlMime(m.data_url) ?? "unknown",
@@ -204,8 +204,8 @@ export class SciDaVinciClient {
     }));
     const frame: Outbound =
       media && media.length > 0
-        ? { type: "message", chat_id: chatId, content, media }
-        : { type: "message", chat_id: chatId, content };
+        ? { type: "message", chat_id: chatId, content, display_content: displayContent, media }
+        : { type: "message", chat_id: chatId, content, display_content: displayContent };
     this.queueSend(frame);
   }
 

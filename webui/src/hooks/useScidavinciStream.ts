@@ -217,7 +217,7 @@ export function useScidavinciStream(
         ...(hasImages ? images!.map((i) => i.media) : []),
         ...(hasDocuments ? documents! : []),
       ];
-      client.sendMessage(chatId, content, wireMedia.length > 0 ? wireMedia : undefined);
+      client.sendMessage(chatId, content, wireMedia.length > 0 ? wireMedia : undefined, bubbleText);
     },
     [chatId, client],
   );
