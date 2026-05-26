@@ -15,8 +15,8 @@ interface ThreadViewportProps {
 }
 
 const SHOW_BOTTOM_BUTTON_PX = 96;
-const AUTO_STICK_BOTTOM_PX = 4;
-const USER_SCROLL_SETTLE_MS = 180;
+const AUTO_STICK_BOTTOM_PX = 2;
+const USER_SCROLL_SETTLE_MS = 900;
 
 export function ThreadViewport({
   messages,
@@ -28,8 +28,11 @@ export function ThreadViewport({
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const autoStickRef = useRef(true);
+  const atBottomRef = useRef(true);
+  const pendingAtBottomRef = useRef(true);
   const userScrollingRef = useRef(false);
   const userScrollTimerRef = useRef<number | null>(null);
+  const lastMessageCountRef = useRef(messages.length);
   const [atBottom, setAtBottom] = useState(true);
   const hasMessages = messages.length > 0;
 
@@ -42,13 +45,20 @@ export function ThreadViewport({
     });
   }, []);
 
+  const commitAtBottom = useCallback((nextAtBottom: boolean) => {
+    pendingAtBottomRef.current = nextAtBottom;
+    if (userScrollingRef.current || atBottomRef.current === nextAtBottom) return;
+    atBottomRef.current = nextAtBottom;
+    setAtBottom(nextAtBottom);
+  }, []);
+
   const updateBottomState = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const distance = Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight);
     autoStickRef.current = distance <= AUTO_STICK_BOTTOM_PX;
-    setAtBottom(distance <= SHOW_BOTTOM_BUTTON_PX);
-  }, []);
+    commitAtBottom(distance <= SHOW_BOTTOM_BUTTON_PX);
+  }, [commitAtBottom]);
 
   const markUserScrolling = useCallback(() => {
     userScrollingRef.current = true;
@@ -58,10 +68,17 @@ export function ThreadViewport({
     userScrollTimerRef.current = window.setTimeout(() => {
       userScrollingRef.current = false;
       userScrollTimerRef.current = null;
+      if (atBottomRef.current !== pendingAtBottomRef.current) {
+        atBottomRef.current = pendingAtBottomRef.current;
+        setAtBottom(pendingAtBottomRef.current);
+      }
     }, USER_SCROLL_SETTLE_MS);
   }, []);
 
   useLayoutEffect(() => {
+    const messageCountChanged = messages.length !== lastMessageCountRef.current;
+    lastMessageCountRef.current = messages.length;
+    if (!messageCountChanged && !isStreaming) return;
     if (!autoStickRef.current || userScrollingRef.current) return;
     scrollToBottom(false);
   }, [messages, isStreaming, scrollToBottom]);
@@ -72,13 +89,15 @@ export function ThreadViewport({
     if (!content || !scroller || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
       if (!autoStickRef.current || userScrollingRef.current) return;
-      scrollToBottom(false);
+      if (isStreaming) {
+        scrollToBottom(false);
+      }
       updateBottomState();
     });
     observer.observe(content);
     observer.observe(scroller);
     return () => observer.disconnect();
-  }, [scrollToBottom, updateBottomState]);
+  }, [isStreaming, scrollToBottom, updateBottomState]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -138,7 +157,7 @@ export function ThreadViewport({
         <div
           ref={scrollRef}
           className={cn(
-            "absolute inset-0 overflow-y-auto overscroll-contain scrollbar-thin",
+            "absolute inset-0 overflow-y-auto overscroll-y-none scrollbar-thin",
             "[overflow-anchor:none] [scrollbar-gutter:stable]",
             "[&::-webkit-scrollbar]:w-1.5",
             "[&::-webkit-scrollbar-thumb]:rounded-full",

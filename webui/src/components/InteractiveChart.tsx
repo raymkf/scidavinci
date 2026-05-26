@@ -38,6 +38,8 @@ import { JOURNAL_CHART_STYLE, journalColor } from "@/lib/chart-style";
 import type { ChartConfig, ChartElementMetadata, FigureObjectRef, FillSpec } from "@/lib/chart-types";
 import { cn } from "@/lib/utils";
 
+const CHART_ENTRY_ANIMATION_ACTIVE = false;
+
 interface InteractiveChartProps {
   config: ChartConfig;
   className?: string;
@@ -522,6 +524,7 @@ export function InteractiveChart({
                 activeDot={{ r: 6, cursor: "pointer" }}
                 dot={{ r: 3.8, cursor: "pointer", strokeWidth: 1.4, fill: JOURNAL_CHART_STYLE.background }}
                 cursor="pointer"
+                isAnimationActive={CHART_ENTRY_ANIMATION_ACTIVE}
                 onClick={(pointData) => {
                   if (!pointData) return;
                   const payload = pointData as unknown as Record<string, unknown>;
@@ -624,6 +627,7 @@ export function InteractiveChart({
                 fill={color}
                 fillOpacity={0.16}
                 cursor="pointer"
+                isAnimationActive={CHART_ENTRY_ANIMATION_ACTIVE}
                 onClick={(pointData) => {
                   if (!pointData) return;
                   const payload = pointData as unknown as Record<string, unknown>;
