@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { AskUserPrompt } from "@/components/thread/AskUserPrompt";
 import { FirstRunGuide } from "@/components/thread/FirstRunGuide";
+import type { PlotDatasetChoice } from "@/components/thread/PlotSelectionPanel";
 import { ThreadComposer } from "@/components/thread/ThreadComposer";
 import { ThreadHeader } from "@/components/thread/ThreadHeader";
 import { StreamErrorNotice } from "@/components/thread/StreamErrorNotice";
@@ -32,6 +33,15 @@ interface PendingFirstMessage {
   images?: SendImage[];
   documents?: OutboundMedia[];
   displayContent?: string;
+}
+
+const SPREADSHEET_EXTENSIONS = new Set([".csv", ".tsv", ".xlsx", ".xls", ".ods"]);
+
+function isSpreadsheetAttachmentName(name?: string): boolean {
+  if (!name) return false;
+  const clean = name.split(/[?#]/, 1)[0]?.toLowerCase() ?? "";
+  const dot = clean.lastIndexOf(".");
+  return dot >= 0 && SPREADSHEET_EXTENSIONS.has(clean.slice(dot));
 }
 
 /**
@@ -136,6 +146,26 @@ export function ThreadShell({
       if (message.role === "assistant") return null;
     }
     return null;
+  }, [messages]);
+  const uploadedDatasets = useMemo<PlotDatasetChoice[]>(() => {
+    const seen = new Set<string>();
+    const datasets: PlotDatasetChoice[] = [];
+    for (const message of messages) {
+      if (message.role !== "user") continue;
+      for (const item of message.media ?? []) {
+        if (!isSpreadsheetAttachmentName(item.name)) continue;
+        const name = item.name ?? "uploaded dataset";
+        const key = name.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        datasets.push({
+          id: `uploaded:${key}`,
+          name,
+          source: "uploaded",
+        });
+      }
+    }
+    return datasets;
   }, [messages]);
 
   useEffect(() => {
@@ -283,6 +313,7 @@ export function ThreadShell({
                       }
                       modelLabel={toModelBadgeLabel(modelName)}
                       variant={showHeroComposer ? "hero" : "thread"}
+                      uploadedDatasets={uploadedDatasets}
                     />
                   ) : (
                     <ThreadComposer

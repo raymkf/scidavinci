@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MessageSquareText } from "lucide-react";
+import { Check, MessageSquareText } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -17,8 +17,10 @@ export function AskUserPrompt({
 }: AskUserPromptProps) {
   const [customOpen, setCustomOpen] = useState(false);
   const [custom, setCustom] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const options = buttons.flat().filter(Boolean);
+  const allowMultiple = /多选|一个或多个|多个图|multiple|one or more|select .*more/i.test(question);
 
   useEffect(() => {
     if (customOpen) {
@@ -33,6 +35,21 @@ export function AskUserPrompt({
     setCustom("");
     setCustomOpen(false);
   }, [custom, onAnswer]);
+
+  const toggleSelected = useCallback((option: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(option)) next.delete(option);
+      else next.add(option);
+      return next;
+    });
+  }, []);
+
+  const submitSelected = useCallback(() => {
+    if (selected.size === 0) return;
+    onAnswer(`Selected: ${Array.from(selected).join(", ")}`);
+    setSelected(new Set());
+  }, [onAnswer, selected]);
 
   if (options.length === 0) return null;
 
@@ -55,18 +72,33 @@ export function AskUserPrompt({
       </div>
 
       <div className="grid gap-1.5 sm:grid-cols-2">
-        {options.map((option) => (
+        {options.map((option) => {
+          const checked = selected.has(option);
+          return (
           <Button
             key={option}
             type="button"
-            variant="outline"
+            variant={checked ? "default" : "outline"}
             size="sm"
-            onClick={() => onAnswer(option)}
-            className="justify-start rounded-[10px] px-3 text-left"
+            onClick={() => allowMultiple ? toggleSelected(option) : onAnswer(option)}
+            className="justify-start gap-2 rounded-[10px] px-3 text-left"
+            aria-pressed={allowMultiple ? checked : undefined}
           >
+            {allowMultiple ? (
+              <span
+                className={cn(
+                  "grid h-4 w-4 flex-none place-items-center rounded border",
+                  checked ? "border-primary-foreground/80" : "border-border",
+                )}
+                aria-hidden
+              >
+                {checked ? <Check className="h-3 w-3" /> : null}
+              </span>
+            ) : null}
             <span className="truncate">{option}</span>
           </Button>
-        ))}
+          );
+        })}
         <Button
           type="button"
           variant="ghost"
@@ -77,6 +109,20 @@ export function AskUserPrompt({
           Other...
         </Button>
       </div>
+
+      {allowMultiple ? (
+        <div className="mt-2 flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            onClick={submitSelected}
+            disabled={selected.size === 0}
+            className="rounded-[10px]"
+          >
+            Confirm selection
+          </Button>
+        </div>
+      ) : null}
 
       {customOpen ? (
         <div className="mt-2 flex gap-2">

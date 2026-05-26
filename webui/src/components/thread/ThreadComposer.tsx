@@ -17,6 +17,11 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { ChartElementChips } from "@/components/ChartElementChips";
+import {
+  PlotSelectionPanel,
+  type PlotDatasetChoice,
+  type PlotSelection,
+} from "@/components/thread/PlotSelectionPanel";
 import { Button } from "@/components/ui/button";
 import { VisualAnchorChips } from "@/components/VisualAnchorChips";
 import {
@@ -35,6 +40,7 @@ import type { SendImage } from "@/hooks/useScidavinciStream";
 import { cn } from "@/lib/utils";
 
 const MAX_DOCUMENTS_PER_MESSAGE = 5;
+const SPREADSHEET_EXTENSIONS = new Set([".csv", ".tsv", ".xlsx", ".xls", ".ods"]);
 
 /** Server-side ``_DOCUMENT_MIME_ALLOWED`` mirror. */
 const DOC_MIME_TYPES: ReadonlySet<string> = new Set([
@@ -88,6 +94,11 @@ function documentMimeFor(file: File): string | null {
   return DOC_MIME_TYPES.has(file.type) ? file.type : null;
 }
 
+function isSpreadsheetName(name?: string): boolean {
+  if (!name) return false;
+  return SPREADSHEET_EXTENSIONS.has(fileExtension(name));
+}
+
 interface DocumentAttachment {
   id: string;
   file: File;
@@ -100,6 +111,7 @@ interface ThreadComposerProps {
   placeholder?: string;
   modelLabel?: string | null;
   variant?: "thread" | "hero";
+  uploadedDatasets?: PlotDatasetChoice[];
 }
 
 export function ThreadComposer({
@@ -108,6 +120,7 @@ export function ThreadComposer({
   placeholder,
   modelLabel = null,
   variant = "thread",
+  uploadedDatasets = [],
 }: ThreadComposerProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
@@ -245,6 +258,22 @@ export function ThreadComposer({
 
   const readyDocs = docs.filter((d) => d.dataUrl);
   const hasDocs = readyDocs.length > 0;
+  const plotDatasets = useMemo<PlotDatasetChoice[]>(() => {
+    const current = readyDocs
+      .filter((doc) => isSpreadsheetName(doc.file.name))
+      .map((doc) => ({
+        id: `attached:${doc.id}`,
+        name: doc.file.name,
+        source: "attached" as const,
+      }));
+    const seen = new Set<string>();
+    return [...current, ...uploadedDatasets].filter((dataset) => {
+      const key = `${dataset.source}:${dataset.name}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [readyDocs, uploadedDatasets]);
 
   const canSend =
     !disabled
@@ -450,6 +479,43 @@ export function ThreadComposer({
     activeAsset,
   ]);
 
+  const submitPlotSelections = useCallback((selections: PlotSelection[]) => {
+    if (selections.length === 0 || disabled || encoding) return;
+    const selectedAttached = new Set(
+      selections
+        .filter((selection) => selection.dataset.source === "attached")
+        .map((selection) => selection.dataset.name),
+    );
+    const docsToSend = readyDocs.filter((doc) => selectedAttached.has(doc.file.name));
+    const docPayload: OutboundMedia[] | undefined =
+      docsToSend.length > 0
+        ? docsToSend.map((doc) => ({ data_url: doc.dataUrl, name: doc.file.name }))
+        : undefined;
+    const payload = {
+      intent: "manual_plot_selection",
+      selectedCharts: selections.map((selection) => ({
+        fileName: selection.dataset.name,
+        datasetSource: selection.dataset.source,
+        chartTypes: selection.chartTypes,
+      })),
+      instructions: [
+        "Use list_datasets first and match each fileName to the available dataset_id.",
+        "Only generate the chart types selected by the user.",
+        "For each selected chart, inspect the dataset and ask the user for field/parameter choices if the mapping is ambiguous.",
+        "If all required fields are clear, call plot_dataset for each confirmed chart and return the chart-json blocks in the selected order.",
+      ],
+    };
+    const summary = selections
+      .map((selection) => `${selection.dataset.name}: ${selection.chartTypes.join(", ")}`)
+      .join("\n");
+    const content = `[Manual Plot Selection]\n${JSON.stringify(payload, null, 2)}`;
+    const displayContent = `选择作图：\n${summary}`;
+    onSend(content, undefined, docPayload, displayContent);
+    setInlineError(null);
+    setDocs((prev) => prev.filter((doc) => !selectedAttached.has(doc.file.name)));
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [disabled, encoding, onSend, readyDocs]);
+
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -612,6 +678,11 @@ export function ThreadComposer({
         ) : null}
         <ChartElementChips className="px-3 pt-2" />
         <VisualAnchorChips className="px-3 pt-2" />
+        <PlotSelectionPanel
+          datasets={plotDatasets}
+          disabled={disabled || encoding}
+          onConfirm={submitPlotSelections}
+        />
         <textarea
           ref={textareaRef}
           value={value}

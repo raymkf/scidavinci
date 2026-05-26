@@ -8,6 +8,7 @@ SciDaVinci is an interactive scientific plotting and analysis platform. The publ
 | --- | --- |
 | [`quick-start.md`](./quick-start.md) | Install, configure a model, and start the Web UI |
 | [`interactive-charts.md`](./interactive-charts.md) | Supported chart types and example prompts |
+| [`bioinformatics-chart-expansion.md`](./bioinformatics-chart-expansion.md) | Proposed bioinformatics chart expansion priorities and selection workflows |
 | [`release-checklist.md`](./release-checklist.md) | Pre-release checks for maintainers |
 
 ## Current Scope
