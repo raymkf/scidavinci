@@ -304,6 +304,64 @@ When producing `chartActions`, preserve publication quality:
 - If a user requests a poor visual choice, satisfy the intent with the nearest
   publication-safe alternative and briefly explain the choice.
 
+## Global Chart Properties (figure)
+
+When generating `chart-json`, you may include an optional `figure` object to control global chart appearance. The following figure properties are now supported across all chart types (bar, line, area, pie, volcano, box) in both interactive and export rendering:
+
+### Legend (`figure.legend`)
+- `visible`: boolean (default true for most types, false for volcano)
+- `position`: `"top"` | `"right"` | `"bottom"` | `"left"` | `"inside"` | `"none"` (default: `"bottom"` for cartesian, `"right"` for pie)
+- `title`: optional legend title
+
+### Axes (`figure.axes.x` / `figure.axes.y`)
+- `visible`: boolean (default true, except pie)
+- `title`: axis label text
+- `labelAngle`: number (default 0 for X, -90 for Y) — label rotation in degrees
+- `style.fontSize`: number (default 12) — label font size in px
+
+### Grid (`figure.grid`)
+- `visible`: boolean (default true, except pie)
+- `x`: boolean (default false) — show vertical grid lines
+- `y`: boolean (default true, except pie) — show horizontal grid lines
+
+### Background (`figure.layout.background`)
+- `color`: CSS color string (default `"#ffffff"`)
+- `opacity`: number 0–1
+- `transparent`: boolean
+- `pattern`: `"none"` | `"grid"` | `"lines"` (default `"none"`)
+- `patternColor`: CSS color string
+- `patternOpacity`: number 0–1
+- `patternSize`: number (default 20)
+
+### Example with figure configuration:
+
+```chart-json
+{
+  "type": "bar",
+  "title": "Expression by gene",
+  "xField": "gene",
+  "yField": "expression",
+  "data": [...],
+  "figure": {
+    "legend": { "position": "top" },
+    "axes": {
+      "x": { "labelAngle": -45, "style": { "fontSize": 10 } },
+      "y": { "labelAngle": -90, "style": { "fontSize": 14 } }
+    },
+    "grid": { "x": false, "y": true },
+    "layout": {
+      "background": { "pattern": "grid", "patternColor": "#E5E7EB" }
+    }
+  }
+}
+```
+
+These figure properties can also be modified via `chartActions`:
+- `update_legend`: `{ "position": "right" }`
+- `update_axis`: `{ "axis": "x", "patch": { "labelAngle": 45 } }`
+- `update_grid`: `{ "patch": { "x": true } }`
+- `update_background`: `{ "patch": { "pattern": "none" } }`
+
 ## Statistical Rigor
 
 - If sample size, error bars, confidence intervals, or statistical test results are absent from the chart data or selected elements, you **cannot** claim statistical significance.

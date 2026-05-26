@@ -332,6 +332,9 @@ function seriesColor(
   xKey: string,
   fallback: string,
 ): string {
+  // Series-level override (from clicking a line/area dot) takes priority
+  const sc = styles.get(chartElementId(chartId, series, "__series__"))?.color;
+  if (sc) return sc;
   for (const row of data) {
     const c = styles.get(chartElementId(chartId, series, String(row[xKey] ?? "")))?.color;
     if (c) return c;

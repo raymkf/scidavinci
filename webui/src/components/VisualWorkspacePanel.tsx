@@ -824,7 +824,6 @@ function FigureInspector({
   const yTitle = figure.axes?.y?.title ?? config.yLabel ?? (config.unit ? `Value (${config.unit})` : "");
   const showXAxis = figure.axes?.x?.visible !== false;
   const showYAxis = figure.axes?.y?.visible !== false;
-  const showLegend = figure.legend?.visible !== false;
   const canAnnotate = selectedElements.length > 0 && annotationText.trim().length > 0;
 
   return (
@@ -848,6 +847,16 @@ function FigureInspector({
             onBackgroundChange={(patch) => onAction({ type: "update_background", patch })}
             onGridChange={(checked) => onAction({ type: "update_grid", patch: { visible: checked, y: checked } })}
           />
+        ) : null}
+
+        {(activeObject?.kind === "grid" && figure.grid?.visible !== false) ? (
+          <div className="rounded border border-border/70 p-2">
+            <ToggleControl
+              label="垂直网格线"
+              checked={figure.grid?.x ?? false}
+              onChange={(checked) => onAction({ type: "update_grid", patch: { x: checked } })}
+            />
+          </div>
         ) : null}
 
         {activeObject?.kind === "title" ? (
@@ -875,8 +884,12 @@ function FigureInspector({
             label="X 轴"
             title={xTitle}
             visible={showXAxis}
+            labelAngle={figure.axes?.x?.labelAngle ?? 0}
+            fontSize={figure.axes?.x?.style?.fontSize ?? 12}
             onTitleChange={(title) => onAction({ type: "update_axis", axis: "x", patch: { title } })}
             onVisibleChange={(visible) => onAction({ type: "update_axis", axis: "x", patch: { visible } })}
+            onLabelAngleChange={(angle) => onAction({ type: "update_axis", axis: "x", patch: { labelAngle: angle } })}
+            onFontSizeChange={(size) => onAction({ type: "update_axis", axis: "x", patch: { style: { fontSize: size } } })}
           />
         ) : null}
 
@@ -885,17 +898,40 @@ function FigureInspector({
             label="Y 轴"
             title={yTitle}
             visible={showYAxis}
+            labelAngle={figure.axes?.y?.labelAngle ?? -90}
+            fontSize={figure.axes?.y?.style?.fontSize ?? 12}
             onTitleChange={(title) => onAction({ type: "update_axis", axis: "y", patch: { title } })}
             onVisibleChange={(visible) => onAction({ type: "update_axis", axis: "y", patch: { visible } })}
+            onLabelAngleChange={(angle) => onAction({ type: "update_axis", axis: "y", patch: { labelAngle: angle } })}
+            onFontSizeChange={(size) => onAction({ type: "update_axis", axis: "y", patch: { style: { fontSize: size } } })}
           />
         ) : null}
 
         {activeObject?.kind === "legend" || !activeObject ? (
-          <ToggleControl
-            label="图例"
-            checked={showLegend}
-            onChange={(checked) => onAction({ type: "update_legend", patch: { visible: checked } })}
-          />
+          <div className="rounded border border-border/70 p-2">
+            <ToggleControl
+              label="图例"
+              checked={figure.legend?.visible !== false && figure.legend?.position !== "none"}
+              onChange={(checked) => onAction({ type: "update_legend", patch: { visible: checked, position: checked ? "bottom" : "none" } })}
+            />
+            {figure.legend?.visible !== false && figure.legend?.position !== "none" ? (
+              <label className="mt-2 block space-y-1 text-[11px] font-medium text-muted-foreground">
+                位置
+                <select
+                  value={figure.legend?.position ?? "bottom"}
+                  onChange={(e) => onAction({ type: "update_legend", patch: { position: e.target.value as import("@/lib/chart-types").LegendSpec["position"] } })}
+                  className="mt-1 h-8 w-full rounded border border-border bg-background px-2 text-xs text-foreground"
+                >
+                  <option value="top">上</option>
+                  <option value="right">右</option>
+                  <option value="bottom">下</option>
+                  <option value="left">左</option>
+                  <option value="inside">内部</option>
+                  <option value="none">隐藏</option>
+                </select>
+              </label>
+            ) : null}
+          </div>
         ) : null}
 
         {activeAnnotation ? (
@@ -1083,14 +1119,22 @@ function AxisInspector({
   label,
   title,
   visible,
+  labelAngle,
+  fontSize,
   onTitleChange,
   onVisibleChange,
+  onLabelAngleChange,
+  onFontSizeChange,
 }: {
   label: string;
   title: string;
   visible: boolean;
+  labelAngle?: number;
+  fontSize?: number;
   onTitleChange: (title: string) => void;
   onVisibleChange: (visible: boolean) => void;
+  onLabelAngleChange: (angle: number) => void;
+  onFontSizeChange: (size: number) => void;
 }) {
   return (
     <div className="rounded border border-border/70 p-2">
@@ -1103,6 +1147,32 @@ function AxisInspector({
           className="h-8 w-full rounded border border-border bg-background px-2 text-xs text-foreground"
         />
       </label>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+          角度
+          <input
+            type="number"
+            value={labelAngle ?? 0}
+            min={-180}
+            max={180}
+            step={5}
+            onChange={(event) => onLabelAngleChange(Number(event.target.value) || 0)}
+            className="mt-0.5 h-8 w-full rounded border border-border bg-background px-2 text-xs text-foreground"
+          />
+        </label>
+        <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+          字号
+          <input
+            type="number"
+            value={fontSize ?? 12}
+            min={6}
+            max={48}
+            step={1}
+            onChange={(event) => onFontSizeChange(Math.max(6, Number(event.target.value) || 12))}
+            className="mt-0.5 h-8 w-full rounded border border-border bg-background px-2 text-xs text-foreground"
+          />
+        </label>
+      </div>
     </div>
   );
 }
@@ -1575,6 +1645,9 @@ function seriesColor(
   xKey: string,
   fallback: string,
 ): string {
+  // Series-level override (from clicking a line/area dot) takes priority
+  const seriesColor = styles.get(chartElementId(chartId, series, "__series__"))?.color;
+  if (seriesColor) return seriesColor;
   for (const entry of data) {
     const color = styles.get(chartElementId(chartId, series, String(entry[xKey] ?? "")))?.color;
     if (color) return color;
@@ -2064,6 +2137,34 @@ async function renderChartToCanvas(
     ctx.globalAlpha = 1;
   }
 
+  // Render background pattern if set
+  const bgPattern = background?.pattern;
+  if (bgPattern && bgPattern !== "none" && !background?.transparent) {
+    const patternColor = hexToRgba(background?.patternColor ?? "#E5E7EB", background?.patternOpacity ?? 0.8);
+    const size = background?.patternSize ?? 20;
+    ctx.strokeStyle = patternColor;
+    ctx.lineWidth = 1;
+    ctx.save();
+    ctx.setLineDash([2, size - 2]);
+    if (bgPattern === "grid" || bgPattern === "lines") {
+      for (let y = size; y < logicalH; y += size) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(logicalW, y);
+        ctx.stroke();
+      }
+    }
+    if (bgPattern === "grid") {
+      for (let x = size; x < logicalW; x += size) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, logicalH);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   ctx.fillStyle = JOURNAL_CHART_STYLE.axisColor;
   ctx.font = `700 34px ${JOURNAL_CHART_STYLE.fontFamily}`;
   ctx.textAlign = "left";
@@ -2074,11 +2175,11 @@ async function renderChartToCanvas(
   }
 
   if (config.type === "pie") {
-    drawPieExport(ctx, assetId, config, elementStyles, figure);
+    drawPieExport(ctx, assetId, config, elementStyles, figure, logicalW, logicalH);
   } else if (config.type === "volcano") {
-    drawVolcanoExport(ctx, assetId, config, elementStyles, logicalW, logicalH);
+    drawVolcanoExport(ctx, assetId, config, elementStyles, figure, logicalW, logicalH);
   } else if (config.type === "box") {
-    drawBoxExport(ctx, assetId, config, elementStyles, logicalW, logicalH);
+    drawBoxExport(ctx, assetId, config, elementStyles, figure, logicalW, logicalH);
   } else {
     drawCartesianExport(ctx, assetId, config, elementStyles, figure, logicalW, logicalH);
   }
@@ -2152,10 +2253,13 @@ function drawCartesianExport(
     const value = minValue + (span * i) / 5;
     const y = yFor(value);
     if (figure.grid?.visible !== false) {
+      ctx.save();
+      ctx.setLineDash([4, 8]);
       ctx.beginPath();
       ctx.moveTo(plot.x, y);
       ctx.lineTo(plot.x + plot.w, y);
       ctx.stroke();
+      ctx.restore();
     }
     ctx.fillText(formatExportNumber(value), plot.x - 14, y);
   }
@@ -2171,12 +2275,17 @@ function drawCartesianExport(
   const xAxisTitle = figure.axes?.x?.visible === false ? "" : figure.axes?.x?.title ?? config.xLabel ?? config.xField ?? "";
   const yAxisTitle = figure.axes?.y?.visible === false ? "" : figure.axes?.y?.title ?? config.yLabel ?? (config.unit ? `Value (${config.unit})` : "");
 
+  const yAngleDeg = figure.axes?.y?.labelAngle ?? -90;
+  const xAngleDeg = figure.axes?.x?.labelAngle ?? 0;
+  const yAxisFontSize = figure.axes?.y?.style?.fontSize ?? 24;
+  const xAxisFontSize = figure.axes?.x?.style?.fontSize ?? 24;
+
   if (yAxisTitle) {
     ctx.save();
     ctx.translate(34, plot.y + plot.h / 2);
-    ctx.rotate(-Math.PI / 2);
+    ctx.rotate((yAngleDeg * Math.PI) / 180);
     ctx.fillStyle = JOURNAL_CHART_STYLE.axisColor;
-    ctx.font = `24px ${JOURNAL_CHART_STYLE.fontFamily}`;
+    ctx.font = `${yAxisFontSize}px ${JOURNAL_CHART_STYLE.fontFamily}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(yAxisTitle, 0, 0);
@@ -2184,11 +2293,17 @@ function drawCartesianExport(
   }
 
   if (xAxisTitle) {
+    ctx.save();
+    ctx.translate(plot.x + plot.w / 2, plot.y + plot.h + 58);
+    if (xAngleDeg !== 0) {
+      ctx.rotate((xAngleDeg * Math.PI) / 180);
+    }
     ctx.fillStyle = JOURNAL_CHART_STYLE.axisColor;
-    ctx.font = `24px ${JOURNAL_CHART_STYLE.fontFamily}`;
+    ctx.font = `${xAxisFontSize}px ${JOURNAL_CHART_STYLE.fontFamily}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText(xAxisTitle, plot.x + plot.w / 2, plot.y + plot.h + 58);
+    ctx.fillText(xAxisTitle, 0, 0);
+    ctx.restore();
   }
 
   if (config.type === "bar") {
@@ -2306,7 +2421,7 @@ function drawCartesianExport(
   });
 
   if (figure.legend?.visible !== false) {
-    drawLegend(ctx, fields, config.colors, plot.x, plot.y + plot.h + 50);
+    drawLegend(ctx, fields, config.colors, figure.legend?.position, plot, logicalW);
   }
 }
 
@@ -2316,6 +2431,8 @@ function drawPieExport(
   config: ChartConfig,
   elementStyles: Map<string, ChartElementStyle>,
   figure: FigureModel,
+  logicalW: number,
+  _logicalH: number,
 ): void {
   const data = config.data as Record<string, unknown>[];
   const nameKey = config.nameField ?? "name";
@@ -2371,8 +2488,9 @@ function drawPieExport(
           row,
         ),
       ),
-      1120,
-      280,
+      figure.legend?.position,
+      { x: 440, y: 220, w: 600, h: 600 },
+      logicalW,
     );
   }
 }
@@ -2382,6 +2500,7 @@ function drawVolcanoExport(
   assetId: string,
   config: ChartConfig,
   elementStyles: Map<string, ChartElementStyle>,
+  figure: FigureModel,
   logicalW: number,
   logicalH: number,
 ): void {
@@ -2406,7 +2525,7 @@ function drawVolcanoExport(
   const xToPx = (x: number) => plot.x + ((x + maxAbsX) / (maxAbsX * 2)) * plot.w;
   const yToPx = (y: number) => plot.y + plot.h - (y / maxY) * plot.h;
 
-  drawExportAxes(ctx, plot, config.xLabel ?? "log2 fold change", config.yLabel ?? "-log10(p-value)");
+  drawExportAxes(ctx, plot, config.xLabel ?? "log2 fold change", config.yLabel ?? "-log10(p-value)", figure.grid?.visible !== false, figure.axes?.y?.labelAngle, figure.axes?.y?.style?.fontSize, figure.axes?.x?.style?.fontSize);
   ctx.strokeStyle = "#9CA3AF";
   ctx.setLineDash([8, 8]);
   [-xThreshold, xThreshold].forEach((x) => {
@@ -2444,6 +2563,9 @@ function drawVolcanoExport(
       ctx.stroke();
     }
   });
+  if (figure.legend?.visible !== false && figure.legend?.position !== "none") {
+    drawLegend(ctx, ["Up", "Down", "Not Significant"], [journalColor(1), journalColor(0), "#9CA3AF"], figure.legend?.position, plot, logicalW);
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -2452,6 +2574,7 @@ function drawBoxExport(
   assetId: string,
   config: ChartConfig,
   elementStyles: Map<string, ChartElementStyle>,
+  figure: FigureModel,
   logicalW: number,
   logicalH: number,
 ): void {
@@ -2467,7 +2590,7 @@ function drawBoxExport(
   const max = Math.max(...values, 1);
   const plot = { x: 130, y: 150, w: logicalW - 310, h: Math.max(360, logicalH - 320) };
   const yFor = (value: number) => plot.y + ((max - value) / Math.max(1, max - min)) * plot.h;
-  drawExportAxes(ctx, plot, config.xLabel ?? config.xField ?? "", config.yLabel ?? (config.unit ? `Value (${config.unit})` : ""));
+  drawExportAxes(ctx, plot, config.xLabel ?? config.xField ?? "", config.yLabel ?? (config.unit ? `Value (${config.unit})` : ""), figure.grid?.visible !== false, figure.axes?.y?.labelAngle, figure.axes?.y?.style?.fontSize, figure.axes?.x?.style?.fontSize);
 
   data.forEach((row, index) => {
     const category = String(row[xKey] ?? `Group ${index + 1}`);
@@ -2510,6 +2633,16 @@ function drawBoxExport(
     ctx.textAlign = "center";
     ctx.fillText(category, cx, plot.y + plot.h + 32);
   });
+  if (figure.legend?.visible !== false && figure.legend?.position !== "none") {
+    drawLegend(
+      ctx,
+      data.map((row, i) => String(row[xKey] ?? `Group ${i + 1}`)),
+      data.map((_, i) => config.colors?.[i] ?? journalColor(i)),
+      figure.legend?.position,
+      plot,
+      logicalW,
+    );
+  }
 }
 
 function drawExportAxes(
@@ -2517,15 +2650,24 @@ function drawExportAxes(
   plot: { x: number; y: number; w: number; h: number },
   xLabel: string,
   yLabel: string,
+  gridVisible: boolean = true,
+  yLabelAngleDeg?: number,
+  yLabelFontSize?: number,
+  xLabelFontSize?: number,
 ): void {
-  ctx.strokeStyle = JOURNAL_CHART_STYLE.gridColor;
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 5; i += 1) {
-    const y = plot.y + (plot.h * i) / 5;
-    ctx.beginPath();
-    ctx.moveTo(plot.x, y);
-    ctx.lineTo(plot.x + plot.w, y);
-    ctx.stroke();
+  if (gridVisible) {
+    ctx.save();
+    ctx.setLineDash([4, 8]);
+    ctx.strokeStyle = JOURNAL_CHART_STYLE.gridColor;
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 5; i += 1) {
+      const y = plot.y + (plot.h * i) / 5;
+      ctx.beginPath();
+      ctx.moveTo(plot.x, y);
+      ctx.lineTo(plot.x + plot.w, y);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
   ctx.strokeStyle = JOURNAL_CHART_STYLE.axisColor;
   ctx.lineWidth = 2;
@@ -2535,12 +2677,14 @@ function drawExportAxes(
   ctx.lineTo(plot.x + plot.w, plot.y + plot.h);
   ctx.stroke();
   ctx.fillStyle = JOURNAL_CHART_STYLE.axisColor;
-  ctx.font = `24px ${JOURNAL_CHART_STYLE.fontFamily}`;
+  ctx.font = `${xLabelFontSize ?? 24}px ${JOURNAL_CHART_STYLE.fontFamily}`;
   ctx.textAlign = "center";
   ctx.fillText(xLabel, plot.x + plot.w / 2, plot.y + plot.h + 68);
   ctx.save();
   ctx.translate(44, plot.y + plot.h / 2);
-  ctx.rotate(-Math.PI / 2);
+  const angleDeg = yLabelAngleDeg ?? -90;
+  ctx.rotate((angleDeg * Math.PI) / 180);
+  ctx.font = `${yLabelFontSize ?? 24}px ${JOURNAL_CHART_STYLE.fontFamily}`;
   ctx.fillText(yLabel, 0, 0);
   ctx.restore();
 }
@@ -2549,21 +2693,81 @@ function drawLegend(
   ctx: CanvasRenderingContext2D,
   labels: string[],
   colors: string[] | undefined,
-  x: number,
-  y: number,
+  position: "top" | "right" | "bottom" | "left" | "inside" | "none" | undefined,
+  plot: { x: number; y: number; w: number; h: number },
+  _logicalW: number,
 ): void {
+  if (position === "none") return;
   ctx.save();
   ctx.font = `22px ${JOURNAL_CHART_STYLE.fontFamily}`;
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  labels.forEach((label, index) => {
-    const itemX = x + (index % 4) * 300;
-    const itemY = y + Math.floor(index / 4) * 34;
-    ctx.fillStyle = colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length];
-    ctx.fillRect(itemX, itemY - 8, 18, 18);
-    ctx.fillStyle = JOURNAL_CHART_STYLE.mutedText;
-    ctx.fillText(label, itemX + 28, itemY + 1);
-  });
+
+  const itemW = 280;
+  const itemH = 34;
+
+  if (position === "left" || position === "right") {
+    // Vertical list along the side
+    const isRight = position === "right";
+    const startX = isRight ? plot.x + plot.w + 40 : plot.x - 220;
+    labels.forEach((label, index) => {
+      const itemY = plot.y + index * itemH;
+      ctx.fillStyle = colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length];
+      ctx.fillRect(startX, itemY - 8, 18, 18);
+      ctx.fillStyle = JOURNAL_CHART_STYLE.mutedText;
+      ctx.fillText(label, startX + 28, itemY + 1);
+    });
+  } else if (position === "inside") {
+    // Top-right corner inside plot area
+    const columns = Math.min(labels.length, 2);
+    const totalW = columns * itemW;
+    const startX = plot.x + plot.w - totalW - 20;
+    const startY = plot.y + 10;
+    labels.forEach((label, index) => {
+      const col = index % columns;
+      const row = Math.floor(index / columns);
+      const itemX = startX + col * itemW;
+      const itemY = startY + row * itemH;
+      ctx.fillStyle = colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length];
+      ctx.fillRect(itemX, itemY - 8, 18, 18);
+      ctx.fillStyle = JOURNAL_CHART_STYLE.mutedText;
+      ctx.fillText(label, itemX + 28, itemY + 1);
+    });
+  } else if (position === "top") {
+    // Above plot area
+    const columns = Math.min(labels.length, 5);
+    const totalW = columns * itemW;
+    const startX = plot.x + (plot.w - totalW) / 2;
+    const rows = Math.ceil(labels.length / columns);
+    const startY = plot.y - rows * itemH - 16;
+    labels.forEach((label, index) => {
+      const col = index % columns;
+      const row = Math.floor(index / columns);
+      const itemX = startX + col * itemW;
+      const itemY = startY + row * itemH;
+      ctx.fillStyle = colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length];
+      ctx.fillRect(itemX, itemY - 8, 18, 18);
+      ctx.fillStyle = JOURNAL_CHART_STYLE.mutedText;
+      ctx.fillText(label, itemX + 28, itemY + 1);
+    });
+  } else {
+    // "bottom" (default) — below plot area
+    const columns = Math.min(labels.length, 4);
+    const totalW = columns * itemW;
+    const startX = plot.x + (plot.w - totalW) / 2;
+    const startY = plot.y + plot.h + 50;
+    labels.forEach((label, index) => {
+      const col = index % columns;
+      const row = Math.floor(index / columns);
+      const itemX = startX + col * itemW;
+      const itemY = startY + row * itemH;
+      ctx.fillStyle = colors?.[index] ?? DEFAULT_THUMB_COLORS[index % DEFAULT_THUMB_COLORS.length];
+      ctx.fillRect(itemX, itemY - 8, 18, 18);
+      ctx.fillStyle = JOURNAL_CHART_STYLE.mutedText;
+      ctx.fillText(label, itemX + 28, itemY + 1);
+    });
+  }
+
   ctx.restore();
 }
 
