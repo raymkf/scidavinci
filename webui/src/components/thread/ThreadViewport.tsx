@@ -16,6 +16,7 @@ interface ThreadViewportProps {
 
 const SHOW_BOTTOM_BUTTON_PX = 96;
 const AUTO_STICK_BOTTOM_PX = 4;
+const USER_SCROLL_SETTLE_MS = 180;
 
 export function ThreadViewport({
   messages,
@@ -27,6 +28,8 @@ export function ThreadViewport({
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const autoStickRef = useRef(true);
+  const userScrollingRef = useRef(false);
+  const userScrollTimerRef = useRef<number | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const hasMessages = messages.length > 0;
 
@@ -47,8 +50,19 @@ export function ThreadViewport({
     setAtBottom(distance <= SHOW_BOTTOM_BUTTON_PX);
   }, []);
 
+  const markUserScrolling = useCallback(() => {
+    userScrollingRef.current = true;
+    if (userScrollTimerRef.current !== null) {
+      window.clearTimeout(userScrollTimerRef.current);
+    }
+    userScrollTimerRef.current = window.setTimeout(() => {
+      userScrollingRef.current = false;
+      userScrollTimerRef.current = null;
+    }, USER_SCROLL_SETTLE_MS);
+  }, []);
+
   useLayoutEffect(() => {
-    if (!autoStickRef.current) return;
+    if (!autoStickRef.current || userScrollingRef.current) return;
     scrollToBottom(false);
   }, [messages, isStreaming, scrollToBottom]);
 
@@ -57,7 +71,7 @@ export function ThreadViewport({
     const scroller = scrollRef.current;
     if (!content || !scroller || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      if (!autoStickRef.current) return;
+      if (!autoStickRef.current || userScrollingRef.current) return;
       scrollToBottom(false);
       updateBottomState();
     });
@@ -71,11 +85,38 @@ export function ThreadViewport({
     if (!el) return;
 
     const onScroll = () => updateBottomState();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ([
+        "ArrowDown",
+        "ArrowUp",
+        "End",
+        "Home",
+        "PageDown",
+        "PageUp",
+        " ",
+      ].includes(event.key)) {
+        markUserScrolling();
+      }
+    };
 
     updateBottomState();
     el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [updateBottomState]);
+    el.addEventListener("wheel", markUserScrolling, { passive: true });
+    el.addEventListener("touchstart", markUserScrolling, { passive: true });
+    el.addEventListener("pointerdown", markUserScrolling, { passive: true });
+    el.addEventListener("keydown", onKeyDown);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", markUserScrolling);
+      el.removeEventListener("touchstart", markUserScrolling);
+      el.removeEventListener("pointerdown", markUserScrolling);
+      el.removeEventListener("keydown", onKeyDown);
+      if (userScrollTimerRef.current !== null) {
+        window.clearTimeout(userScrollTimerRef.current);
+        userScrollTimerRef.current = null;
+      }
+    };
+  }, [markUserScrolling, updateBottomState]);
 
   // Listen for workspace → chat navigation requests
   useEffect(() => {
@@ -98,13 +139,14 @@ export function ThreadViewport({
           ref={scrollRef}
           className={cn(
             "absolute inset-0 overflow-y-auto overscroll-contain scrollbar-thin",
+            "[overflow-anchor:none] [scrollbar-gutter:stable]",
             "[&::-webkit-scrollbar]:w-1.5",
             "[&::-webkit-scrollbar-thumb]:rounded-full",
             "[&::-webkit-scrollbar-thumb]:bg-muted-foreground/30",
             "[&::-webkit-scrollbar-track]:bg-transparent",
           )}
         >
-          <div ref={contentRef} className="min-h-full">
+          <div ref={contentRef} className="min-h-full [overflow-anchor:none]">
             {hasMessages ? (
               <div className="mx-auto flex min-h-full w-full max-w-[64rem] flex-col">
                 <div className="flex-1 px-4 pb-6 pt-4">
