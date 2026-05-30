@@ -1,370 +1,212 @@
 ---
 name: chart-interaction
-description: "Primary figure-generation skill for the WebUI. Generate publication-quality interactive charts with chart-json, preserve clickable element metadata, and modify chart styles via chartActions. Use this before any static plotting skill for supported figure types: bar, line, area, pie, volcano, and box."
+description: "Primary figure-generation skill for scidavinci WebUI. Generate publication-quality interactive charts with Python matplotlib rendering + Konva overlay, preserve clickable element metadata, and modify chart styles via chartActions. Supports 18+ bioinformatics chart types."
 always: true
 ---
 
 # Chart Interaction Skill
 
-This project is **interactive-first**. For supported figure types, generate and
-modify interactive charts with `chart-json`; do not generate static matplotlib
-images unless the user explicitly asks for static PDF/TIFF/matplotlib export or
-the requested figure type is unsupported by the interactive renderer.
+This project is **interactive-first** and targets **journal/publication-quality figures**.
+Charts are rendered by Python matplotlib/seaborn on the backend and displayed as PNG images
+with a transparent Konva.js overlay for element interaction. Output ` ```chart-image ` code
+blocks containing the rendered image URL and overlay zone coordinates.
 
-The frontend renders chart data that you provide in ` ```chart-json ` code
-blocks and applies `chartActions` to modify existing chart elements.
+## 1. Publication-Quality Standards (~30 lines)
 
-## Publication-Quality Standard
+- **Color palette**: Colorblind-friendly journal palette (Wong 2011):
+  `#0072B2`(blue) `#D55E00`(vermillion) `#009E73`(green) `#CC79A7`(purple) `#E69F00`(orange) `#56B4E9`(sky) `#F0E442`(yellow) `#000000`(black)
+- **Chart style**: Restrained 2D, white background, clear axes, minimal grid. No 3D, no decorative gradients, no gratuitous effects.
+- **Font**: Arial/Helvetica, 10pt axis labels, 12pt title, 9pt legend. Export at 300 DPI minimum.
+- **Axes**: Ticks inward. No top/right border lines (classic biology journal style: open axes).
+- **Legend**: Inside top-right by default, no border. If it occludes data, move to top or bottom.
+- **Error bars**: Default to SEM for bar charts. Switch to SD or CI when explicitly requested.
+- **Significance**: `*p<0.05, **p<0.01, ***p<0.001, ****p<0.0001`. Never claim significance without sample sizes and statistical tests.
+- **Map casual color words** to journal-safe colors: "red"→`#D55E00`, "blue"→`#0072B2`, "green"→`#009E73`.
 
-Interactive charts are still research figures. Treat every `chart-json` chart
-and every `chartActions` edit as if it may be exported for a manuscript or
-supplementary figure.
+## 2. Plan Mode — Structured Chart Planning (~40 lines)
 
-Required visual standards:
-- Use a colorblind-friendly journal palette by default:
-  - blue `#0072B2`
-  - vermillion `#D55E00`
-  - bluish green `#009E73`
-  - reddish purple `#CC79A7`
-  - orange `#E69F00`
-  - sky blue `#56B4E9`
-  - yellow `#F0E442`
-  - black `#000000`
-- Prefer restrained 2D charts with white background, clear axes, minimal grid,
-  no decorative gradients, no 3D, and no unnecessary effects.
-- Use descriptive titles, meaningful series names, units, and concise captions.
-- Do not use pie charts unless part-to-whole composition is genuinely the
-  analytical question; prefer bar/line/area for comparisons and trends.
-- When changing colors, map casual user color words to the nearest journal-safe
-  color instead of using saturated web colors. For example, "red" should become
-  vermillion `#D55E00`, and "blue" should become `#0072B2`.
-- Maintain contrast and legibility after edits. Avoid pale colors for small
-  marks unless there is a dark outline or a clear label.
-- Do not claim statistical significance unless sample sizes, uncertainty, and
-  statistical tests are provided.
+**Trigger**: When the user makes a broad request like "visualize this data", "看看这些数据画什么图",
+"帮我看看这个差异表达数据" — DO NOT immediately call `plot_dataset`. Instead:
 
-## Selected Chart Elements
+1. Use `list_datasets` to inspect available datasets.
+2. For each dataset, identify the column types and infer candidate chart types.
+3. Output a `<plot_plan>` JSON block (see schema below) with up to **6 recommendations**.
+4. Wait for the user to confirm their selections before generating any charts.
 
-When the user has selected chart elements, they are prepended to the user message:
-
-```
-[Selected Chart Elements]
-[2024 实验组: 82.3%] (elementId: bar_2024_treatment, chartType: bar, series: 实验组, category: 2024, value: 82.3)
-[2024 对照组: 45.1%] (elementId: bar_2024_control, chartType: bar, series: 对照组, category: 2024, value: 45.1)
-```
-
-When `[Selected Chart Elements]` is present in the user message, you **must**:
-- Prioritize understanding those elements in context
-- Explicitly reference their labels, values, series, categories, and chart types in your response
-- Combine element values, cross-element differences, chart context, and available research background
-
-## Selected Visual Anchors
-
-The user may also click ordinary generated images in the visual workspace. Those
-clicks are prepended as coordinate anchors:
-
-```
-[Selected Visual Anchors]
-[Figure 2 @ 43%, 61%] (assetId: message-abc-image-0, assetTitle: Figure 2, kind: image, xPct: 43.2, yPct: 61.0)
-```
-
-When `[Selected Visual Anchors]` is present:
-- Treat the anchor as a precise user reference to a region in the named image.
-- Use the image title, coordinates, and surrounding conversation to infer what
-  the user is pointing at.
-- Be explicit when the anchor is only coordinate-level and not backed by exact
-  data values.
-- If exact element-level edits are needed, produce or request a paired
-  `chart-json` chart so the front end can expose true clickable data elements.
-
-## Generating Interactive Charts
-
-Priority rule:
-- If the requested figure type is supported by `chart-json`, output `chart-json`
-  as the primary result. Supported interactive types include bar, line, area,
-  pie, volcano, and box.
-- For broad requests such as "visualize this table" or "可视化一下这个表格",
-  do not immediately create a chart. First inspect/list the uploaded dataset(s),
-  infer which supported chart types are plausible for each table, then call
-  `ask_user` with only those inferred chart options. If the user asks for one
-  chart, ask a single-select question. If the user asks for multiple charts,
-  alternatives, or a dashboard, make it clear that they may choose one or more
-  options so the Web UI can collect a multi-select answer. For a box-plot
-  summary table, include box as a candidate rather than silently creating it.
-- When multiple spreadsheet files are available, handle them per dataset:
-  inspect/list each dataset, ask which chart(s) to generate for each file,
-  record the choices in the conversation, then generate charts only after all
-  required dataset/chart choices are confirmed.
-- If the user response contains a manual plot-selection block from the Web UI
-  (`[Manual Plot Selection]`), treat it as an explicit plot plan. Use
-  `list_datasets` to match file names to dataset IDs, inspect fields when
-  needed, ask follow-up `ask_user` questions only for ambiguous field mappings,
-  and generate only the selected chart types in the selected order.
-- When using the `plot_dataset` tool, include the returned `chart-json` code
-  block verbatim in the final assistant response so the Web UI can render it in
-  the chat. Do not leave generated charts only as files, assets, or tool
-  results.
-- Do not switch to matplotlib/Python just because the request is biomedical or
-  "publication quality"; the frontend renderer enforces publication styling.
-- Use matplotlib only for currently unsupported interactive figure families
-  such as UMAP/t-SNE/PCA scatter with embeddings, clustered heatmaps,
-  Kaplan-Meier curves, multi-panel composites, highly customized volcano labels,
-  or when the user explicitly asks for PDF/TIFF/static publication export.
-- When matplotlib is necessary, also provide a paired `chart-json` version if
-  the underlying data can be represented by a supported interactive type.
-- Do not emit unexplained figures. If you output one or more charts, include a
-  short natural-language reason for each chart before or after it: what data it
-  visualizes, why it is useful for the user's request, and the main takeaway.
-- Avoid generating multiple alternative charts unless the user asks for
-  alternatives or each chart has a distinct stated purpose. When in doubt,
-  ask the user to choose from the inferred options before producing charts.
-
-When you want to display data as an interactive chart, output a fenced code block with language `chart-json`:
-
-```chart-json
-{
-  "type": "bar",
-  "title": "Response Rate by Year and Group",
-  "xLabel": "Year",
-  "yLabel": "Response rate (%)",
-  "data": [
-    { "Year": "2023", "实验组": 78.5, "实验组_sem": 3.1, "对照组": 42.3, "对照组_sem": 2.8 },
-    { "Year": "2024", "实验组": 82.3, "实验组_sem": 2.6, "对照组": 45.1, "对照组_sem": 2.5 }
-  ],
-  "xField": "Year",
-  "yFields": ["实验组", "对照组"],
-  "unit": "%",
-  "errorBars": [
-    { "series": "实验组", "field": "实验组_sem", "label": "SEM" },
-    { "series": "对照组", "field": "对照组_sem", "label": "SEM" }
-  ],
-  "significance": [
-    {
-      "from": { "series": "对照组", "category": "2024" },
-      "to": { "series": "实验组", "category": "2024" },
-      "label": "**",
-      "pValue": "0.004"
-    }
-  ],
-  "caption": "Bars show mean response rate; error bars show SEM."
-}
-```
-
-When no explicit colors are requested, include either no `colors` field (the
-frontend will apply the journal palette) or use only the journal palette above.
-
-Important bar-chart rule:
-- Do not represent a single-series bar chart as many one-bar series just to
-  give each bar a different color. That creates grouped bars and makes each bar
-  too thin.
-- If the user asks for different colors on individual bars in an existing
-  chart, keep the chart structure unchanged and return `chartActions` targeting
-  the existing bar `elementId`s.
-- If the user asks for a newly generated single-series bar chart where each bar
-  has its own color, keep one numeric field and use `elementStyles` keyed by the
-  bar category or by `${series}@@${category}`:
-
-```chart-json
-{
-  "type": "bar",
-  "title": "Expression by gene",
-  "xField": "gene",
-  "yField": "expression",
-  "yLabel": "Normalized expression",
-  "data": [
-    { "gene": "IL6", "expression": 12.4 },
-    { "gene": "TNF", "expression": 8.7 }
-  ],
-  "elementStyles": {
-    "IL6": { "color": "#D55E00" },
-    "TNF": { "color": "#0072B2" }
-  }
-}
-```
-
-- Do not switch to matplotlib just because the user wants individual bar
-  colors. Per-element styling belongs to the interactive chart path.
-
-Supported chart types:
-
-| Type | Description | Required Fields |
-|------|-------------|-----------------|
-| `"bar"` | Vertical bar chart (default) | `xField`, `yFields` or `yField` |
-| `"line"` | Line chart with dots | `xField`, `yFields` or `yField` |
-| `"pie"` | Pie chart with labels | `nameField`, `valueField` |
-| `"area"` | Area chart with fill | `xField`, `yFields` or `yField` |
-| `"volcano"` | Differential analysis volcano plot | `xValueField`, `yValueField` or `pValueField`, `labelField` |
-| `"box"` | Box-and-whisker summaries | `xField`, `minField`, `q1Field`, `medianField`, `q3Field`, `maxField` |
-
-All fields for `bar`/`line`/`area`:
-- `type`: chart type
-- `title`: optional heading above chart
-- `data`: array of objects (each object = one row)
-- `xField`: key for x-axis / category column
-- `yFields`: array of keys for data series (use `yField` for single series)
-- `xLabel`: manuscript-ready x-axis title
-- `yLabel`: manuscript-ready y-axis title, with units when applicable
-- `unit`: optional suffix for numerical labels
-- `caption`: figure legend/caption text suitable for export
-- `aspectRatio`: optional figure ratio such as `"1:1"`, `"4:3"`, or `"16:9"`
-- `description`: optional short UI caption when `caption` is absent
-- `errorBars`: optional uncertainty metadata, one object per series:
-  `{ "series": "treatment", "field": "treatment_sem", "label": "SEM" }`
-- `significance`: optional statistical brackets:
-  `{ "from": {"series": "...", "category": "..."}, "to": {"series": "...", "category": "..."}, "label": "*", "pValue": "0.03" }`
-
-Pie chart fields:
-- `type: "pie"`
-- `data`: array of objects
-- `nameField`: key for slice labels
-- `valueField`: key for numerical values
-- `caption`: figure legend/caption text suitable for export
-
-Volcano chart fields:
-- `type: "volcano"`
-- `data`: array of gene/protein/feature rows
-- `xValueField`: log2 fold-change field, commonly `"log2FoldChange"`
-- `yValueField`: `-log10(p)` field when already computed
-- `pValueField`: raw p-value field when `yValueField` is absent
-- `labelField`: gene/protein identifier used for clicked-element semantics
-- `groupField`: optional category such as "up", "down", "not significant"
-- `xThreshold`: fold-change cutoff, often `1`
-- `yThreshold`: `-log10(p)` cutoff, often `1.301` for p=0.05
-
-Box chart fields:
-- `type: "box"`
-- `data`: one object per group
-- `xField`: group label
-- `minField`, `q1Field`, `medianField`, `q3Field`, `maxField`
-- `outliersField`: optional array field for outlier values
-
-For manuscript-quality scientific charts, include axis labels, units, captions,
-and uncertainty fields whenever the underlying data supports them. Do not omit
-error bars when the prompt provides SD/SEM/CI or replicate-level summaries.
-
-For dense charts such as volcano plots, keep every data row in `data` when
-the dataset is small enough to fit comfortably in the response. Do **not**
-inline thousands of rows into a chat response. Large datasets must be handled
-as data artifacts/files or by the frontend data layer, with `chart-json`
-containing only the plot specification and a reference to the data source once
-available. Include stable `idField` or `labelField` values so a clicked point
-can be traced back to the source table. The frontend should send only the
-clicked element's source row back to the model, not the entire table.
-
-Hard rule for dense data:
-- Do not paste full large tables into natural language or markdown.
-- Do not emit giant `chart-json.data` arrays for large volcano plots.
-- If the data is large and no data-reference mechanism is available, ask the
-  user to upload/use a data file and explain that the interactive renderer
-  should load the file directly.
-- For quick demos only, use a small synthetic subset and label it clearly as a
-  demo, not the full dataset.
-
-## Modifying Chart Styles (chartActions)
-
-When the user asks to change colors, highlight elements, or add annotations to selected chart elements, you must return a JSON block with `chartActions`:
-
+**Plan JSON schema**:
 ```json
 {
-  "reply": "已将这根柱子改为红色。这是一根很高的柱子，代表了该实验组的最高响应率。",
-  "chartActions": [
+  "plan_id": "plan-001",
+  "title": "Differential Expression Visualization Plan",
+  "description": "One-sentence summary of what this plan covers",
+  "datasets": ["dataset-uuid-1"],
+  "recommendations": [
     {
-      "type": "update_element_style",
-      "targetElementIds": ["bar_2024_treatment"],
-      "style": {
-        "color": "#D55E00",
-        "stroke": "#111827",
-        "strokeWidth": 2
-      }
+      "chart_type": "volcano",
+      "display_name": "Volcano Plot",
+      "rationale": "Show significantly up/down-regulated genes with fold-change vs p-value",
+      "required_fields": [
+        {"field": "log2FoldChange", "role": "x", "available": true},
+        {"field": "negLog10P", "role": "y", "available": false},
+        {"field": "pvalue", "role": "pValue", "available": true}
+      ],
+      "suggested_config": {"xValueField": "log2FoldChange", "pValueField": "pvalue"},
+      "priority": "recommended"
     }
   ]
 }
 ```
 
-For annotations:
-```json
+- `priority`: "recommended" (strong fit), "alternative" (works but not ideal), "conditional" (only if specific conditions met)
+- Each recommendation MUST include `rationale` (1-2 sentences) and field availability check.
+- **Skip Plan Mode** when: the user explicitly names a chart type ("画一个火山图"), or the request is clearly single-chart ("把这个表做成bar chart").
+
+## 3. Direct Chart Generation (~20 lines)
+
+When the user has confirmed a plan or explicitly requested a chart type, call `plot_dataset`
+with the appropriate parameters. The tool returns a ` ```chart-image ` code block containing
+the backend-rendered PNG URL, overlay zones, and metadata.
+
+**Do NOT construct chart-image JSON manually** — always use the `plot_dataset` tool, which:
+1. Queries the full dataset via DuckDB
+2. Renders the chart with Python matplotlib/seaborn (Nature journal quality)
+3. Returns a ` ```chart-image ` block that the frontend displays as an interactive image+overlay
+
+The chart-image format returned by plot_dataset looks like:
+```chart-image
 {
-  "reply": "已添加注释说明这个异常值。",
-  "chartActions": [
-    {
-      "type": "add_annotation",
-      "targetElementIds": ["bar_2023_control"],
-      "text": "Possible measurement error — value deviates >3σ from mean"
-    }
+  "imageUrl": "/api/charts/chart_abc123.png",
+  "imageWidth": 800,
+  "imageHeight": 520,
+  "type": "volcano",
+  "title": "Volcano Plot: Treatment vs Control",
+  "zones": [
+    {"id": "gene_TP53", "x": 423.5, "y": 28.1, "width": 8, "height": 8,
+     "metadata": {"label": "TP53", "value": 5.2, "chartType": "volcano", ...}}
   ]
 }
 ```
 
-**Important**: chartActions must be included within the natural language response body, either as a standalone JSON code block or embedded in the response text. The frontend parses `{"reply": "...", "chartActions": [...]}` patterns.
+**CRITICAL — Include chart-image block in your response.** The frontend renders charts
+from ` ```chart-image ` blocks found in your **assistant message content**. When
+`plot_dataset` returns a ` ```chart-image ` block, you MUST copy it verbatim into
+your response message. Without it, the user sees NO chart — just text. Write your reply
+text around the chart-image block; keep the block intact without modification.
 
-When producing `chartActions`, preserve publication quality:
-- Use journal-safe colors from the palette above.
-- Keep `strokeWidth` modest, usually 1.5–2.5.
-- Avoid flashy styling, heavy outlines, shadows, or animated-looking effects.
-- If a user requests a poor visual choice, satisfy the intent with the nearest
-  publication-safe alternative and briefly explain the choice.
+Supported chart types (call plot_dataset with these): bar, line, pie, area, volcano, box,
+scatter, violin, heatmap, pca, bubble, venn, upset, histogram, density, stacked_bar, gsea,
+correlation_heatmap, enrichment_bar.
 
-## Global Chart Properties (figure)
+**Overlay highlight shapes**: Zone highlights now match actual chart geometry:
+- Rect (default): bars, boxes, area fills, heatmap cells
+- Circle: scatter points, bubble markers, venn set circles, line data points
+- Wedge: pie/donut slices
 
-When generating `chart-json`, you may include an optional `figure` object to control global chart appearance. The following figure properties are now supported across all chart types (bar, line, area, pie, volcano, box) in both interactive and export rendering:
+Shape metadata (`_shape`, `_circle_cx/cy/r`, `_wedge_cx/cy/r`, `_konva_rotation/_konva_angle`)
+is automatically embedded by the backend renderer and frontend chart renderers. No manual
+configuration needed.
 
-### Legend (`figure.legend`)
-- `visible`: boolean (default true for most types, false for volcano)
-- `position`: `"top"` | `"right"` | `"bottom"` | `"left"` | `"inside"` | `"none"` (default: `"bottom"` for cartesian, `"right"` for pie)
-- `title`: optional legend title
+Optional plot_dataset parameters:
+- `journal`: "nature" | "science" | "cell" | "lancet" (controls font, tick style, etc.)
+- `aspect_ratio`: e.g. "4:3", "1:1", "16:9"
+- `x_label`, `y_label`: override axis labels
+- `element_styles`: JSON string mapping element keys to style overrides for per-element
+  appearance changes. Keys use `category` (gene name, bar label) or `series@@category`
+  for disambiguation in grouped charts. Supported style fields: `color`, `fillOpacity`,
+  `stroke`, `strokeWidth`, `pointSize`, `visible`. Example:
+  `'{"TP53": {"color": "#FF0000", "fillOpacity": 0.5}, "Treatment@@Cell Line A": {"color": "#D55E00"}}'`.
+  Use this to regenerate a chart with specific elements recolored — do NOT use chartActions
+  for color/style changes on chart-image charts.
 
-### Axes (`figure.axes.x` / `figure.axes.y`)
-- `visible`: boolean (default true, except pie)
-- `title`: axis label text
-- `labelAngle`: number (default 0 for X, -90 for Y) — label rotation in degrees
-- `style.fontSize`: number (default 12) — label font size in px
+For detailed field requirements of each chart type, read the corresponding chart-type skill file:
+`skills/chart-interaction/chart-types/distribution.md` (box, violin, histogram, density)
+`skills/chart-interaction/chart-types/relationship.md` (scatter, volcano, correlation_heatmap)
+`skills/chart-interaction/chart-types/composition.md` (bar, stacked_bar, pie, donut)
+`skills/chart-interaction/chart-types/genomics.md` (heatmap, pca)
+`skills/chart-interaction/chart-types/multi-set.md` (venn, upset)
+`skills/chart-interaction/chart-types/pathway.md` (bubble, gsea, enrichment_bar)
 
-### Grid (`figure.grid`)
-- `visible`: boolean (default true, except pie)
-- `x`: boolean (default false) — show vertical grid lines
-- `y`: boolean (default true, except pie) — show horizontal grid lines
+## 4. Interaction Protocol — CRITICAL: Two Chart Types
 
-### Background (`figure.layout.background`)
-- `color`: CSS color string (default `"#ffffff"`)
-- `opacity`: number 0–1
-- `transparent`: boolean
-- `pattern`: `"none"` | `"grid"` | `"lines"` (default `"none"`)
-- `patternColor`: CSS color string
-- `patternOpacity`: number 0–1
-- `patternSize`: number (default 20)
+**There are TWO fundamentally different chart rendering paths. They have DIFFERENT interaction capabilities.**
 
-### Example with figure configuration:
+### chart-image (Backend PNG + Overlay)
 
-```chart-json
-{
-  "type": "bar",
-  "title": "Expression by gene",
-  "xField": "gene",
-  "yField": "expression",
-  "data": [...],
-  "figure": {
-    "legend": { "position": "top" },
-    "axes": {
-      "x": { "labelAngle": -45, "style": { "fontSize": 10 } },
-      "y": { "labelAngle": -90, "style": { "fontSize": 14 } }
-    },
-    "grid": { "x": false, "y": true },
-    "layout": {
-      "background": { "pattern": "grid", "patternColor": "#E5E7EB" }
-    }
-  }
-}
+These are static PNG images rendered by Python matplotlib with a transparent Konva.js overlay
+for hit detection. The overlay is generated automatically by `plot_dataset`.
+
+**What chartActions CAN do (overlay-level only):**
+- `select_elements` / `clear_selection` — toggle overlay highlight outlines on elements
+- `select_by_semantic_query` — select elements by label, threshold, top_n, etc. → shows overlay highlight
+- `add_annotation` — add text/arrow annotations on the overlay
+
+**What chartActions CANNOT do (no visual effect on the PNG):**
+- `update_element_style` / `style_current_selection` / `style_by_ids` — changing color, size, stroke on a PNG has ZERO visual effect
+- Any action that modifies the rendered appearance of chart elements
+
+**Rule: When the user asks to change how a chart-image chart LOOKS (color, size, labels, axis, title),
+you MUST call `plot_dataset` again with updated parameters to regenerate the entire image.
+Do NOT use chartActions for visual style changes on chart-image charts.**
+
+### chart-canvas (Frontend Konva Rendering)
+
+These are vector charts rendered entirely in the browser via Konva.js. chartActions CAN
+modify element styles (color, stroke, size) in real-time with immediate visual feedback.
+
+### When to use chartActions vs Regeneration
+
+| User asks to... | chart-image (PNG) | chart-canvas (Konva) |
+|---|---|---|
+| Highlight/select elements | ✅ chartActions | ✅ chartActions |
+| Change element color | ❌ → regenerate | ✅ chartActions |
+| Change size/point size | ❌ → regenerate | ✅ chartActions |
+| Add annotations | ✅ chartActions | ✅ chartActions |
+| Change title/axis labels | ❌ → regenerate | ❌ → regenerate |
+| Add/remove grid | ❌ → regenerate | ❌ → regenerate |
+| Adjust axis range | ❌ → regenerate | ❌ → regenerate |
+
+**When regenerating a chart-image chart for style changes:**
+1. Query the specific data you need (e.g., find the gene name)
+2. Call `plot_dataset` with the SAME dataset and chart type, plus the `element_styles` parameter
+   to override colors/styles for specific elements by name
+3. The tool returns a fresh chart-image block — the old chart is replaced
+
+**NEVER fall back to manual matplotlib/Python scripts.** Always use `plot_dataset` for chart generation.
+It handles journal styling, color palettes, and overlay zones automatically.
+
+### chartActions JSON format
+
+Embed chartActions in your response when using overlay-level features:
+
+```json
+{"reply": "I've highlighted the top 10 significant genes.", "chartActions": [
+  {"type": "select_by_semantic_query", "intent": "top_n", "plan": {"n": 10, "valueField": "negLog10P", "labelField": "gene"}}
+]}
 ```
 
-These figure properties can also be modified via `chartActions`:
-- `update_legend`: `{ "position": "right" }`
-- `update_axis`: `{ "axis": "x", "patch": { "labelAngle": 45 } }`
-- `update_grid`: `{ "patch": { "x": true } }`
-- `update_background`: `{ "patch": { "pattern": "none" } }`
+Supported actions: `select_elements`, `clear_selection`, `select_by_semantic_query`
+(intents: outliers/top_n/bottom_n/threshold/category/label_match/significant),
+`add_annotation`, `update_axis`, `update_legend`, `update_text_block`, `update_background`.
 
-## Statistical Rigor
+DO NOT use `style_current_selection`, `update_element_style`, or `style_by_ids` on chart-image charts.
+These actions have no visual effect on PNG images.
 
-- If sample size, error bars, confidence intervals, or statistical test results are absent from the chart data or selected elements, you **cannot** claim statistical significance.
-- You may only do descriptive comparisons (e.g., "X is higher than Y").
-- Always qualify uncertainty: "based on the available data" / "this is a descriptive observation".
-- If the user asks for statistical analysis, prompt them to provide sample size, standard deviation/error, confidence intervals, or formal test results.
+When `[Selected Chart Elements]` appears in the user message:
+- Explicitly reference their labels, values, and chart types in your response.
+- Use their element IDs in chartActions when the user asks to highlight them.
+
+## 5. Data Handling (~20 lines)
+
+- **Large tables**: Do NOT inline thousands of rows in data. Always use `plot_dataset`
+  tool which queries the full dataset via DuckDB. Do not construct chart-image JSON manually.
+- **Dense charts (volcano/heatmap)**: Keep all rows when < 3000 points. Above that, use the tool path.
+- **Missing values**: Skip rows with missing required fields. Note in caption: "n=X after excluding missing values."
+- **Attachments**: CSV/XLSX files are auto-profiled. Large attachments (>1000 rows) send only metadata
+  (column names, types, sample rows, summary stats). The model sees these profiles, not raw data.
+
+## Manual Plot Selection
+
+When the user message contains `[Manual Plot Selection]`, treat it as an explicit plot plan:
+- Match file names to dataset IDs via `list_datasets`.
+- Generate only the selected chart types, in the selected order.
+- Use `ask_user` only for ambiguous field mappings.

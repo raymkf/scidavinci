@@ -3,7 +3,7 @@ import type { Table, TableRow, TableCell, Html } from "mdast";
 
 import type { ChartConfig } from "@/lib/chart-types";
 
-/** A remark plugin that converts suitable markdown tables into interactive chart-json code blocks.
+/** A remark plugin that converts suitable markdown tables into interactive chart-canvas code blocks.
  *
  * Heuristic:
  * - Auto-convert: ≥3 rows AND ≥2 fully-numeric columns → keep table + append chart
@@ -68,7 +68,7 @@ export default function remarkTableToChart() {
   };
 }
 
-/** Attempt to extract numeric columns from a table and return a chart-json code node. */
+/** Attempt to extract numeric columns from a table and return a chart-canvas code node. */
 function tryConvertTable(
   table: Table,
   force: boolean,
@@ -137,7 +137,7 @@ function tryConvertTable(
 
   return {
     type: "code",
-    lang: "chart-json",
+    lang: "chart-canvas",
     value: JSON.stringify(config, null, 2),
   };
 }

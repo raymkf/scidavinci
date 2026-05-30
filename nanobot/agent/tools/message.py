@@ -24,6 +24,15 @@ from nanobot.config.paths import get_workspace_path
             ArraySchema(StringSchema("Button label")),
             description="Optional: inline keyboard buttons as list of rows, each row is list of button labels.",
         ),
+        chartActions=ArraySchema(
+            StringSchema("chart action JSON object"),
+            description="Optional: chart interaction actions for the frontend (select_elements, add_annotation, etc.). "
+            "ONLY for overlay-level actions (select/highlight/annotate). Do NOT use for style changes on chart-image PNGs.",
+        ),
+        imageActions=ArraySchema(
+            StringSchema("image action JSON object"),
+            description="Optional: image interaction actions for the frontend.",
+        ),
         required=["content"],
     )
 )
@@ -103,7 +112,9 @@ class MessageTool(Tool):
             "Send a message to the user, optionally with file attachments. "
             "This is the ONLY way to deliver files (images, documents, audio, video) to the user. "
             "Use the 'media' parameter with file paths to attach files. "
-            "Do NOT use read_file to send files — that only reads content for your own analysis."
+            "Do NOT use read_file to send files — that only reads content for your own analysis. "
+            "Use 'chartActions' parameter to send chart interaction actions (select, highlight, annotate) "
+            "to the frontend. For style changes on chart-image PNGs, regenerate the chart instead."
         )
 
     async def execute(
@@ -160,6 +171,14 @@ class MessageTool(Tool):
             metadata["message_id"] = message_id
         if self._record_channel_delivery_var.get():
             metadata["_record_channel_delivery"] = True
+
+        # Forward chartActions and imageActions from tool call to frontend
+        chart_actions = kwargs.get("chartActions")
+        if chart_actions is not None:
+            metadata["_chartActions"] = chart_actions
+        image_actions = kwargs.get("imageActions")
+        if image_actions is not None:
+            metadata["_imageActions"] = image_actions
 
         msg = OutboundMessage(
             channel=channel,

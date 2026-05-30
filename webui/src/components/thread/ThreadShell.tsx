@@ -18,6 +18,7 @@ import { parseChartActionsFromContent } from "@/lib/chart-actions";
 import { resolveSemanticSelectionAction } from "@/lib/chart-semantic-selection";
 import { toMediaAttachment } from "@/lib/media";
 import type { ChatSummary, OutboundMedia, UIMessage } from "@/lib/types";
+import type { VisualAsset } from "@/lib/chart-types";
 import { useClient } from "@/providers/ClientProvider";
 
 interface ThreadShellProps {
@@ -50,17 +51,34 @@ function isSpreadsheetAttachmentName(name?: string): boolean {
  */
 function ChartActionWatcher({ messages }: { messages: UIMessage[] }) {
   const { applyActions } = useChartSelection();
-  const { activeAsset, updateAssetBackground } = useVisualWorkspace();
+  const { activeAsset, assets, updateAssetBackground } = useVisualWorkspace();
   const appliedRef = useRef(new Set<string>());
 
   useEffect(() => {
     for (const msg of messages) {
       if (msg.role !== "assistant" || appliedRef.current.has(msg.id)) continue;
-      const actions = parseChartActionsFromContent(msg.content);
+
+      // Get chart actions from message content (inline JSON) or direct payload
+      const contentActions = parseChartActionsFromContent(msg.content);
+      const directActions = msg.chartActions ?? [];
+      const actions = contentActions.length > 0 ? contentActions : directActions;
+
       if (actions.length > 0) {
         const resolvedActions = actions.flatMap((action) => {
           if (action.type !== "select_by_semantic_query") return [action];
-          const resolved = resolveSemanticSelectionAction(action, activeAsset);
+
+          // Try activeAsset first, then fall back to searching all workspace assets
+          let targetAsset: VisualAsset | null = activeAsset;
+          if (!targetAsset || targetAsset.kind !== "chart") {
+            if (action.assetId && action.assetId !== "active") {
+              targetAsset = assets.find((a) => a.id === action.assetId) ?? null;
+            }
+            if (!targetAsset || targetAsset.kind !== "chart") {
+              targetAsset = assets.find((a) => a.kind === "chart") ?? null;
+            }
+          }
+
+          const resolved = resolveSemanticSelectionAction(action, targetAsset);
           return resolved ? [resolved] : [];
         });
         if (activeAsset?.kind === "image") {
@@ -70,11 +88,13 @@ function ChartActionWatcher({ messages }: { messages: UIMessage[] }) {
             }
           });
         }
-        applyActions(resolvedActions);
+        if (resolvedActions.length > 0) {
+          applyActions(resolvedActions);
+        }
         appliedRef.current.add(msg.id);
       }
     }
-  }, [activeAsset, applyActions, messages, updateAssetBackground]);
+  }, [activeAsset, assets, applyActions, messages, updateAssetBackground]);
 
   return null;
 }

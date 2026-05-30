@@ -647,6 +647,13 @@ class WebSocketChannel(BaseChannel):
         if m:
             return self._handle_session_delete(request, m.group(1))
 
+        # Chart image serving: serves PNGs rendered by the matplotlib backend.
+        # Chart IDs are random UUIDs — no signing needed for these generated
+        # assets, but the path is validated against the media root.
+        m = re.match(r"^/api/charts/([A-Za-z0-9_.-]+)$", got)
+        if m:
+            return self._handle_chart_fetch(m.group(1))
+
         # Signed media fetch: ``<sig>`` is an HMAC over ``<payload>``; the
         # payload decodes to a path inside :func:`get_media_dir`. See
         # :meth:`_sign_media_path` for the inverse direction used to build
@@ -974,6 +981,40 @@ class WebSocketChannel(BaseChannel):
                 ("Cache-Control", "private, max-age=31536000, immutable"),
                 # Paired with the MIME whitelist above: prevents browsers from
                 # MIME-sniffing an octet-stream fallback into executable HTML.
+                ("X-Content-Type-Options", "nosniff"),
+            ],
+        )
+
+    def _handle_chart_fetch(self, filename: str) -> Response:
+        """Serve a chart PNG rendered by the matplotlib backend.
+
+        Charts are saved under ``get_media_dir("websocket")/charts/`` by
+        :func:`chart_renderer.render_chart`.  Filenames contain random UUIDs,
+        so the route is effectively unguessable without additional signing.
+        """
+        # Sanitize filename: only allow alphanumeric, underscore, hyphen, dot
+        safe_name = "".join(c for c in filename if c.isalnum() or c in "_.-")
+        if safe_name != filename or ".." in safe_name:
+            return _http_error(400, "invalid filename")
+        if not safe_name.lower().endswith(".png"):
+            return _http_error(400, "only PNG charts are served")
+
+        candidate = (get_media_dir("websocket") / "charts" / safe_name).resolve()
+        try:
+            candidate.relative_to(get_media_dir("websocket").resolve())
+        except ValueError:
+            return _http_error(403, "Forbidden")
+        if not candidate.is_file():
+            return _http_error(404, "not found")
+        try:
+            body = candidate.read_bytes()
+        except OSError:
+            return _http_error(500, "read error")
+        return _http_response(
+            body,
+            content_type="image/png",
+            extra_headers=[
+                ("Cache-Control", "public, max-age=31536000, immutable"),
                 ("X-Content-Type-Options", "nosniff"),
             ],
         )
@@ -1380,6 +1421,11 @@ class WebSocketChannel(BaseChannel):
             payload["kind"] = "tool_hint"
         elif msg.metadata.get("_progress"):
             payload["kind"] = "progress"
+        # Forward chart/image actions from model tool calls to frontend
+        if msg.metadata.get("_chartActions"):
+            payload["chartActions"] = msg.metadata["_chartActions"]
+        if msg.metadata.get("_imageActions"):
+            payload["imageActions"] = msg.metadata["_imageActions"]
         raw = json.dumps(payload, ensure_ascii=False)
         for connection in conns:
             await self._safe_send_to(connection, raw, label=" ")

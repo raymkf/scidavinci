@@ -170,6 +170,8 @@ export function useScidavinciStream(
               createdAt: Date.now(),
               ...(ev.buttons && ev.buttons.length > 0 ? { buttons: ev.buttons } : {}),
               ...(media && media.length > 0 ? { media } : {}),
+              ...(ev.chartActions ? { chartActions: ev.chartActions } : {}),
+              ...(ev.imageActions ? { imageActions: ev.imageActions } : {}),
             },
           ];
         });

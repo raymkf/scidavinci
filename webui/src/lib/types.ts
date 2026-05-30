@@ -46,6 +46,9 @@ export interface UIMessage {
   media?: UIMediaAttachment[];
   /** Optional answer choices for a pending ask_user question. */
   buttons?: string[][];
+  /** Chart actions forwarded from model tool calls. */
+  chartActions?: import("./chart-types").ChartAction[];
+  imageActions?: import("./chart-types").ChartAction[];
 }
 
 export interface ChatSummary {
@@ -112,6 +115,9 @@ export type InboundEvent =
       /** Present when the frame is an agent breadcrumb (e.g. tool hint,
        * generic progress line) rather than a conversational reply. */
       kind?: "tool_hint" | "progress";
+      /** Chart actions forwarded from model message tool calls. */
+      chartActions?: import("./chart-types").ChartAction[];
+      imageActions?: import("./chart-types").ChartAction[];
     }
   | {
       event: "delta";

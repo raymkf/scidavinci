@@ -1,5 +1,6 @@
 """Document text extraction utilities for nanobot."""
 
+import hashlib
 import mimetypes
 from pathlib import Path
 
@@ -245,12 +246,28 @@ def is_spreadsheet(path: str | Path) -> bool:
 _MAX_EXTRACT_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
+def _file_md5(path: Path, chunk_size: int = 8192) -> str:
+    """Compute MD5 hash of a file for deduplication."""
+    h = hashlib.md5()
+    try:
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                h.update(chunk)
+    except OSError:
+        return ""
+    return h.hexdigest()
+
+
 def extract_documents(
     text: str,
     media_paths: list[str],
     *,
     max_file_size: int = _MAX_EXTRACT_FILE_SIZE,
     inline_spreadsheets: bool = False,
+    seen_hashes: set[str] | None = None,
 ) -> tuple[str, list[str]]:
     """Separate images from documents in *media_paths*.
 
@@ -269,6 +286,11 @@ def extract_documents(
 
     Files larger than *max_file_size* bytes are skipped with a warning
     to avoid unbounded memory / CPU usage.
+
+    When *seen_hashes* is provided, files whose MD5 hash is already in
+    the set are skipped (deduplication). Their hashes are added to the
+    set after processing so repeated uploads of the same file within a
+    session are suppressed.
 
     Returns ``(text, image_paths)`` — spreadsheet paths are intentionally
     absent from both, since images maps to vision blocks and non-spreadsheet
@@ -292,6 +314,15 @@ def extract_documents(
                 p.name, size / (1024 * 1024), max_file_size // (1024 * 1024),
             )
             continue
+
+        # MD5 dedup
+        if seen_hashes is not None:
+            fhash = _file_md5(p)
+            if fhash and fhash in seen_hashes:
+                logger.info("Skipping duplicate file: {} (MD5: {})", p.name, fhash[:8])
+                continue
+            if fhash:
+                seen_hashes.add(fhash)
 
         with open(p, "rb") as f:
             header = f.read(16)

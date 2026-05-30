@@ -31,7 +31,7 @@ import {
 } from "recharts";
 import type { DataKey } from "recharts/types/util/types";
 
-import { InteractiveChart } from "@/components/InteractiveChart";
+import InteractiveChartKonva from "@/components/InteractiveChartKonva";
 import { CollageCanvas, computeTemplatePositions } from "@/components/CollageCanvas";
 import { CollageToolbar } from "@/components/CollageToolbar";
 import { Button } from "@/components/ui/button";
@@ -421,8 +421,9 @@ export function VisualWorkspacePanel() {
 
             {activeAsset.kind === "chart" && activeAsset.chartConfig ? (
               <div className="bg-card p-2">
-                <InteractiveChart
+                <InteractiveChartKonva
                   config={activeAsset.chartConfig}
+                  imageConfig={activeAsset.chartImageConfig}
                   assetId={activeAsset.id}
                   sourceMessageId={activeAsset.sourceMessageId}
                   registerInWorkspace={false}
