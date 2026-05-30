@@ -35,7 +35,7 @@ import {
 } from "@/lib/chart-element-styles";
 import { applyFigureInteractionOverrides, normalizeChartConfig, normalizeFigureModel } from "@/lib/chart-normalize";
 import { JOURNAL_CHART_STYLE, journalColor } from "@/lib/chart-style";
-import type { ChartConfig, ChartElementMetadata, FigureObjectRef, FillSpec } from "@/lib/chart-types";
+import type { ChartConfig, ChartElementMetadata, FigureModel, FigureObjectRef, FillSpec } from "@/lib/chart-types";
 import { cn } from "@/lib/utils";
 
 const CHART_ENTRY_ANIMATION_ACTIVE = false;
@@ -112,7 +112,7 @@ function backgroundStyle(background?: FillSpec): CSSProperties | undefined {
     backgroundColor: opacity < 1 ? hexToRgba(color, opacity) : color,
   };
   const pattern = background.pattern ?? "none";
-  if (pattern === "none") return base;
+  if (pattern === "none") return { ...base, backgroundImage: "none" };
   const patternColor = hexToRgba(background.patternColor ?? "#E5E7EB", background.patternOpacity ?? 0.8);
   const size = background.patternSize ?? 20;
   if (pattern === "lines") {
@@ -156,6 +156,27 @@ function displayText(value: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+/** Series-level elementId sentinel used by line/area charts so that clicking
+ *  any dot selects the whole series rather than an individual point. */
+const SERIES_SENTINEL = "__series__";
+
+/** Find the first color override in elementStyles for a line/area series.
+ *  Checks series-level override first, then individual data points. */
+function resolveSeriesLineColor(
+  _config: ChartConfig,
+  elementStyles: Map<string, import("@/lib/chart-types").ChartElementStyle>,
+  chartId: string,
+  field: string,
+  _xKey: string,
+  _data: Record<string, unknown>[],
+  fallback: string,
+): string {
+  // Series-level override takes priority
+  const seriesStyle = elementStyles.get(chartElementId(chartId, field, SERIES_SENTINEL));
+  if (seriesStyle?.color) return seriesStyle.color;
+  return fallback;
 }
 
 function boxOutlierValuesForRow(
@@ -299,10 +320,26 @@ export function InteractiveChart({
     [isSelected, elementStyles],
   );
 
-  const axisProps = {
+  const xAxisTickFontSize = figure.axes?.x?.style?.fontSize ?? 12;
+  const yAxisTickFontSize = figure.axes?.y?.style?.fontSize ?? 12;
+  const xLabelAngle = figure.axes?.x?.labelAngle ?? 0;
+  const yLabelAngle = figure.axes?.y?.labelAngle ?? -90;
+  const xLabelFontSize = figure.axes?.x?.style?.fontSize ?? 12;
+  const yLabelFontSize = figure.axes?.y?.style?.fontSize ?? 12;
+
+  const xAxisProps = {
     tick: {
       fill: JOURNAL_CHART_STYLE.mutedText,
-      fontSize: 12,
+      fontSize: xAxisTickFontSize,
+      fontFamily: JOURNAL_CHART_STYLE.fontFamily,
+    },
+    axisLine: { stroke: JOURNAL_CHART_STYLE.axisColor, strokeWidth: 1.2 },
+    tickLine: { stroke: JOURNAL_CHART_STYLE.axisColor },
+  };
+  const yAxisProps = {
+    tick: {
+      fill: JOURNAL_CHART_STYLE.mutedText,
+      fontSize: yAxisTickFontSize,
       fontFamily: JOURNAL_CHART_STYLE.fontFamily,
     },
     axisLine: { stroke: JOURNAL_CHART_STYLE.axisColor, strokeWidth: 1.2 },
@@ -340,6 +377,23 @@ export function InteractiveChart({
     },
   };
 
+  function legendRechartsPosition(position: string | undefined): {
+    verticalAlign: "top" | "bottom" | "middle";
+    align: "left" | "center" | "right";
+    layout: "horizontal" | "vertical";
+  } {
+    switch (position) {
+      case "top":    return { verticalAlign: "top",    align: "center", layout: "horizontal" };
+      case "bottom": return { verticalAlign: "bottom", align: "center", layout: "horizontal" };
+      case "left":   return { verticalAlign: "middle", align: "left",   layout: "vertical" };
+      case "right":  return { verticalAlign: "middle", align: "right",  layout: "vertical" };
+      case "inside": return { verticalAlign: "middle", align: "center", layout: "vertical" };
+      default:       return { verticalAlign: "bottom", align: "center", layout: "horizontal" };
+    }
+  }
+
+  const showLegend = figure.legend?.visible !== false && figure.legend?.position !== "none";
+
   const resolveSelectionStrokeWidth = useCallback(
     (elementId: string) => {
       if (!isSelected(elementId)) return undefined;
@@ -356,34 +410,35 @@ export function InteractiveChart({
     return (
       <ResponsiveContainer width="100%" aspect={aspect}>
         <BarChart data={data} margin={{ top: 10, right: 18, bottom: 8, left: 8 }}>
-          {showGrid ? <CartesianGrid vertical={false} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" /> : null}
-          <XAxis dataKey={xKey} hide={figure.axes?.x?.visible === false} {...axisProps}>
+          {showGrid ? <CartesianGrid vertical={figure.grid?.x ?? false} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" /> : null}
+          <XAxis dataKey={xKey} hide={figure.axes?.x?.visible === false} {...xAxisProps}>
             {xLabel ? (
               <Label
                 value={xLabel}
                 position="insideBottom"
                 offset={-4}
+                angle={xLabelAngle}
                 fill={JOURNAL_CHART_STYLE.axisColor}
-                fontSize={12}
+                fontSize={xLabelFontSize}
                 fontFamily={JOURNAL_CHART_STYLE.fontFamily}
               />
             ) : null}
           </XAxis>
-          <YAxis hide={figure.axes?.y?.visible === false} {...axisProps}>
+          <YAxis hide={figure.axes?.y?.visible === false} {...yAxisProps}>
             {yLabel ? (
               <Label
                 value={yLabel}
-                angle={-90}
+                angle={yLabelAngle}
                 position="insideLeft"
                 offset={0}
                 fill={JOURNAL_CHART_STYLE.axisColor}
-                fontSize={12}
+                fontSize={yLabelFontSize}
                 fontFamily={JOURNAL_CHART_STYLE.fontFamily}
               />
             ) : null}
           </YAxis>
           <RechartsTooltip {...tooltipProps} />
-          {figure.legend?.visible === false ? null : <Legend {...legendProps} />}
+          {showLegend ? <Legend {...legendProps} {...legendRechartsPosition(figure.legend?.position)} /> : null}
           {fields.map((field, fi) => {
             const color = config.colors?.[fi] ?? journalColor(fi);
             const errField = errorBarField(config, field);
@@ -498,20 +553,24 @@ export function InteractiveChart({
 
   const renderLineChart = () => {
     const fields = config.yFields ?? [config.yField].filter(Boolean) as string[];
+    const xKey = config.xField ?? "name";
+    const data = config.data as Record<string, unknown>[];
+
     return (
       <ResponsiveContainer width="100%" aspect={aspect}>
-        <LineChart data={config.data as Record<string, unknown>[]} margin={{ top: 10, right: 18, bottom: 8, left: 8 }}>
-          {showGrid ? <CartesianGrid vertical={false} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" /> : null}
-          <XAxis dataKey={config.xField ?? "name"} hide={figure.axes?.x?.visible === false} {...axisProps}>
-            {xLabel ? <Label value={xLabel} position="insideBottom" offset={-4} fill={JOURNAL_CHART_STYLE.axisColor} fontSize={12} fontFamily={JOURNAL_CHART_STYLE.fontFamily} /> : null}
+        <LineChart data={data} margin={{ top: 10, right: 18, bottom: 8, left: 8 }}>
+          {showGrid ? <CartesianGrid vertical={figure.grid?.x ?? false} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" /> : null}
+          <XAxis dataKey={xKey} hide={figure.axes?.x?.visible === false} {...xAxisProps}>
+            {xLabel ? <Label value={xLabel} position="insideBottom" offset={-4} angle={xLabelAngle} fill={JOURNAL_CHART_STYLE.axisColor} fontSize={xLabelFontSize} fontFamily={JOURNAL_CHART_STYLE.fontFamily} /> : null}
           </XAxis>
-          <YAxis hide={figure.axes?.y?.visible === false} {...axisProps}>
-            {yLabel ? <Label value={yLabel} angle={-90} position="insideLeft" offset={0} fill={JOURNAL_CHART_STYLE.axisColor} fontSize={12} fontFamily={JOURNAL_CHART_STYLE.fontFamily} /> : null}
+          <YAxis hide={figure.axes?.y?.visible === false} {...yAxisProps}>
+            {yLabel ? <Label value={yLabel} angle={yLabelAngle} position="insideLeft" offset={0} fill={JOURNAL_CHART_STYLE.axisColor} fontSize={yLabelFontSize} fontFamily={JOURNAL_CHART_STYLE.fontFamily} /> : null}
           </YAxis>
           <RechartsTooltip {...tooltipProps} />
-          {figure.legend?.visible === false ? null : <Legend {...legendProps} />}
+          {showLegend ? <Legend {...legendProps} {...legendRechartsPosition(figure.legend?.position)} /> : null}
           {fields.map((field, i) => {
-            const color = config.colors?.[i] ?? journalColor(i);
+            const paletteColor = config.colors?.[i] ?? journalColor(i);
+            const lineColor = resolveSeriesLineColor(config, elementStyles, chartId, field, xKey, data, paletteColor);
             const errField = errorBarField(config, field);
             return (
               <Line
@@ -519,19 +578,59 @@ export function InteractiveChart({
                 type="monotone"
                 dataKey={field}
                 name={field}
-                stroke={color}
+                stroke={lineColor}
                 strokeWidth={2.4}
                 activeDot={{ r: 6, cursor: "pointer" }}
-                dot={{ r: 3.8, cursor: "pointer", strokeWidth: 1.4, fill: JOURNAL_CHART_STYLE.background }}
+                dot={(dotProps: { cx?: number; cy?: number; index?: number; payload?: Record<string, unknown> }) => {
+                  const idx = dotProps.index ?? 0;
+                  const row = data[idx];
+                  if (!row) return <circle cx={dotProps.cx} cy={dotProps.cy} r={0} fill="none" />;
+                  const cat = String(row[xKey] ?? "");
+                  const value = Number(row[field] ?? 0) || 0;
+                  const meta = buildMetadata(config, chartId, field, cat, value, row);
+                  const seriesMeta: ChartElementMetadata = {
+                    elementId: chartElementId(chartId, field, SERIES_SENTINEL),
+                    chartType: config.type,
+                    series: field,
+                    category: field,
+                    value: 0,
+                    label: `${field} (line series)`,
+                  };
+                  const elemId = meta.elementId;
+                  const dotColor = elementStyles.get(elemId)?.color ?? lineColor;
+                  const dotOpacity = elementStyles.get(elemId)?.opacity ?? 1;
+                  return (
+                    <circle cx={dotProps.cx} cy={dotProps.cy} r={3.8}
+                      fill={dotColor} stroke={dotColor} strokeWidth={1.4}
+                      opacity={selectedElements.length > 0 && !selectedElements.some(s => s.elementId === seriesMeta.elementId || s.elementId === elemId) ? 0.28 : dotOpacity}
+                      role="button"
+                      tabIndex={0}
+                      style={{ cursor: "pointer" }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleElementToggle(seriesMeta);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          toggleElement(seriesMeta);
+                        }
+                      }}
+                    />
+                  );
+                }}
                 cursor="pointer"
                 isAnimationActive={CHART_ENTRY_ANIMATION_ACTIVE}
-                onClick={(pointData) => {
-                  if (!pointData) return;
-                  const payload = pointData as unknown as Record<string, unknown>;
-                  const value = payload[field] as number ?? 0;
-                  const cat = String(payload[config.xField ?? "name"] ?? "");
-                  const meta = buildMetadata(config, chartId, field, cat, Number(value), payload);
-                  handleElementToggle(meta);
+                onClick={() => {
+                  const seriesMeta: ChartElementMetadata = {
+                    elementId: chartElementId(chartId, field, SERIES_SENTINEL),
+                    chartType: config.type,
+                    series: field,
+                    category: field,
+                    value: 0,
+                    label: `${field} (line series)`,
+                  };
+                  handleElementToggle(seriesMeta);
                 }}
               >
                 {errField ? (
@@ -595,6 +694,7 @@ export function InteractiveChart({
             })}
           </Pie>
           <RechartsTooltip {...tooltipProps} />
+          {showLegend ? <Legend {...legendProps} {...legendRechartsPosition(figure.legend?.position)} /> : null}
         </PieChart>
       </ResponsiveContainer>
     );
@@ -602,39 +702,83 @@ export function InteractiveChart({
 
   const renderAreaChart = () => {
     const fields = config.yFields ?? [config.yField].filter(Boolean) as string[];
+    const xKey = config.xField ?? "name";
+    const data = config.data as Record<string, unknown>[];
     return (
       <ResponsiveContainer width="100%" aspect={aspect}>
-        <AreaChart data={config.data as Record<string, unknown>[]} margin={{ top: 10, right: 18, bottom: 8, left: 8 }}>
-          {showGrid ? <CartesianGrid vertical={false} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" /> : null}
-          <XAxis dataKey={config.xField ?? "name"} hide={figure.axes?.x?.visible === false} {...axisProps}>
-            {xLabel ? <Label value={xLabel} position="insideBottom" offset={-4} fill={JOURNAL_CHART_STYLE.axisColor} fontSize={12} fontFamily={JOURNAL_CHART_STYLE.fontFamily} /> : null}
+        <AreaChart data={data} margin={{ top: 10, right: 18, bottom: 8, left: 8 }}>
+          {showGrid ? <CartesianGrid vertical={figure.grid?.x ?? false} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" /> : null}
+          <XAxis dataKey={xKey} hide={figure.axes?.x?.visible === false} {...xAxisProps}>
+            {xLabel ? <Label value={xLabel} position="insideBottom" offset={-4} angle={xLabelAngle} fill={JOURNAL_CHART_STYLE.axisColor} fontSize={xLabelFontSize} fontFamily={JOURNAL_CHART_STYLE.fontFamily} /> : null}
           </XAxis>
-          <YAxis hide={figure.axes?.y?.visible === false} {...axisProps}>
-            {yLabel ? <Label value={yLabel} angle={-90} position="insideLeft" offset={0} fill={JOURNAL_CHART_STYLE.axisColor} fontSize={12} fontFamily={JOURNAL_CHART_STYLE.fontFamily} /> : null}
+          <YAxis hide={figure.axes?.y?.visible === false} {...yAxisProps}>
+            {yLabel ? <Label value={yLabel} angle={yLabelAngle} position="insideLeft" offset={0} fill={JOURNAL_CHART_STYLE.axisColor} fontSize={yLabelFontSize} fontFamily={JOURNAL_CHART_STYLE.fontFamily} /> : null}
           </YAxis>
           <RechartsTooltip {...tooltipProps} />
-          {figure.legend?.visible === false ? null : <Legend {...legendProps} />}
+          {showLegend ? <Legend {...legendProps} {...legendRechartsPosition(figure.legend?.position)} /> : null}
           {fields.map((field, i) => {
-            const color = config.colors?.[i] ?? journalColor(i);
+            const paletteColor = config.colors?.[i] ?? journalColor(i);
+            const areaColor = resolveSeriesLineColor(config, elementStyles, chartId, field, xKey, data, paletteColor);
             return (
               <Area
                 key={field}
                 type="monotone"
                 dataKey={field}
                 name={field}
-                stroke={color}
+                stroke={areaColor}
                 strokeWidth={2.2}
-                fill={color}
+                fill={areaColor}
                 fillOpacity={0.16}
                 cursor="pointer"
                 isAnimationActive={CHART_ENTRY_ANIMATION_ACTIVE}
-                onClick={(pointData) => {
-                  if (!pointData) return;
-                  const payload = pointData as unknown as Record<string, unknown>;
-                  const value = payload[field] as number ?? 0;
-                  const cat = String(payload[config.xField ?? "name"] ?? "");
-                  const meta = buildMetadata(config, chartId, field, cat, Number(value), payload);
-                  handleElementToggle(meta);
+                dot={(dotProps: { cx?: number; cy?: number; index?: number; payload?: Record<string, unknown> }) => {
+                  const idx = dotProps.index ?? 0;
+                  const row = data[idx];
+                  if (!row) return <circle cx={dotProps.cx} cy={dotProps.cy} r={0} fill="none" />;
+                  const cat = String(row[xKey] ?? "");
+                  const value = Number(row[field] ?? 0) || 0;
+                  const meta = buildMetadata(config, chartId, field, cat, value, row);
+                  const seriesMeta: ChartElementMetadata = {
+                    elementId: chartElementId(chartId, field, SERIES_SENTINEL),
+                    chartType: config.type,
+                    series: field,
+                    category: field,
+                    value: 0,
+                    label: `${field} (area series)`,
+                  };
+                  const elemId = meta.elementId;
+                  const dotColor = elementStyles.get(elemId)?.color ?? areaColor;
+                  const dotOpacity = elementStyles.get(elemId)?.opacity ?? 1;
+                  return (
+                    <circle cx={dotProps.cx} cy={dotProps.cy} r={3.8}
+                      fill={dotColor} stroke={dotColor} strokeWidth={1.4}
+                      opacity={selectedElements.length > 0 && !selectedElements.some(s => s.elementId === seriesMeta.elementId || s.elementId === elemId) ? 0.28 : dotOpacity}
+                      role="button"
+                      tabIndex={0}
+                      style={{ cursor: "pointer" }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleElementToggle(seriesMeta);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          toggleElement(seriesMeta);
+                        }
+                      }}
+                    />
+                  );
+                }}
+                onClick={() => {
+                  const seriesMeta: ChartElementMetadata = {
+                    elementId: chartElementId(chartId, field, SERIES_SENTINEL),
+                    chartType: config.type,
+                    series: field,
+                    category: field,
+                    value: 0,
+                    label: `${field} (area series)`,
+                  };
+                  handleElementToggle(seriesMeta);
                 }}
               />
             );
@@ -653,9 +797,9 @@ export function InteractiveChart({
       case "area":
         return renderAreaChart();
       case "volcano":
-        return <VolcanoSvgPlot config={config} chartId={chartId} onElementToggle={handleElementToggle} />;
+        return <VolcanoSvgPlot config={config} figure={figure} chartId={chartId} onElementToggle={handleElementToggle} />;
       case "box":
-        return <BoxPlotSvg config={config} chartId={chartId} aspect={aspect} onElementToggle={handleElementToggle} />;
+        return <BoxPlotSvg config={config} figure={figure} chartId={chartId} aspect={aspect} onElementToggle={handleElementToggle} />;
       case "bar":
       default:
         return renderBarChart();
@@ -697,7 +841,7 @@ export function InteractiveChart({
         {chartContent}
         <FigureHitZones
           activeObject={activeFigureObject}
-          showLegend={figure.legend?.visible !== false && config.type !== "pie"}
+          showLegend={showLegend && config.type !== "pie"}
           onSelect={selectObject}
         />
       </div>
@@ -802,7 +946,7 @@ function FigureHitZones({
 
 const VOLCANO_MAX_POINTS = 3000;
 
-function VolcanoSvgPlot({ config, chartId, onElementToggle }: { config: ChartConfig; chartId: string; onElementToggle: (meta: ChartElementMetadata) => void }) {
+function VolcanoSvgPlot({ config, figure, chartId, onElementToggle }: { config: ChartConfig; figure: FigureModel; chartId: string; onElementToggle: (meta: ChartElementMetadata) => void }) {
   const { selectedElements, elementStyles } = useChartSelection();
   const aspect = aspectNumber(config.aspectRatio ?? "4:3");
   const xField = config.xValueField ?? config.xField ?? "log2FoldChange";
@@ -869,10 +1013,18 @@ function VolcanoSvgPlot({ config, chartId, onElementToggle }: { config: ChartCon
       )}
       <svg viewBox={`0 0 ${width} ${height}`} className="block w-full" role="figure">
         {/* Grid lines */}
-        {[0, 1, 2, 3, 4].map((i) => {
-          const y = plot.y + (plot.h * i) / 4;
-          return <line key={`grid-${i}`} x1={plot.x} x2={plot.x + plot.w} y1={y} y2={y} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" />;
-        })}
+        {figure.grid?.visible !== false ? (
+          [0, 1, 2, 3, 4].map((i) => {
+            const y = plot.y + (plot.h * i) / 4;
+            return <line key={`grid-${i}`} x1={plot.x} x2={plot.x + plot.w} y1={y} y2={y} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" />;
+          })
+        ) : null}
+        {figure.grid?.visible !== false && figure.grid?.x ? (
+          [0, 1, 2, 3, 4].map((i) => {
+            const x = plot.x + (plot.w * i) / 4;
+            return <line key={`vgrid-${i}`} x1={x} x2={x} y1={plot.y} y2={plot.y + plot.h} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" />;
+          })
+        ) : null}
 
         {/* Axes */}
         <path d={`M${plot.x},${plot.y} V${plot.y + plot.h} H${plot.x + plot.w}`} fill="none" stroke={JOURNAL_CHART_STYLE.axisColor} strokeWidth={1.4} />
@@ -925,11 +1077,33 @@ function VolcanoSvgPlot({ config, chartId, onElementToggle }: { config: ChartCon
           );
         })}
 
+        {/* Legend */}
+        {figure.legend?.visible !== false && figure.legend?.position !== "none" ? (
+          <g>
+            {[
+              { label: "Up", color: journalColor(1) },
+              { label: "Down", color: journalColor(0) },
+              { label: "Not Sig.", color: "#9CA3AF" },
+            ].map((item, i) => {
+              const legendY = plot.y + plot.h + 50 + i * 24;
+              const legendX = plot.x + 20;
+              return (
+                <g key={item.label}>
+                  <rect x={legendX} y={legendY} width={12} height={12} fill={item.color} rx={2} />
+                  <text x={legendX + 18} y={legendY + 10} fontSize={11}
+                    fill={JOURNAL_CHART_STYLE.mutedText}
+                    fontFamily={JOURNAL_CHART_STYLE.fontFamily}>{item.label}</text>
+                </g>
+              );
+            })}
+          </g>
+        ) : null}
+
         {/* Axis labels */}
-        <text x={plot.x + plot.w / 2} y={height - 12} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor} fontFamily={JOURNAL_CHART_STYLE.fontFamily}>
+        <text x={plot.x + plot.w / 2} y={height - 12} textAnchor="middle" fontSize={figure.axes?.x?.style?.fontSize ?? 12} fill={JOURNAL_CHART_STYLE.axisColor} fontFamily={JOURNAL_CHART_STYLE.fontFamily}>
           {displayText(config.xLabel) ?? "log2 fold change"}
         </text>
-        <text transform={`translate(16 ${plot.y + plot.h / 2}) rotate(-90)`} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor} fontFamily={JOURNAL_CHART_STYLE.fontFamily}>
+        <text transform={`translate(16 ${plot.y + plot.h / 2}) rotate(${figure.axes?.y?.labelAngle ?? -90})`} textAnchor="middle" fontSize={figure.axes?.y?.style?.fontSize ?? 12} fill={JOURNAL_CHART_STYLE.axisColor} fontFamily={JOURNAL_CHART_STYLE.fontFamily}>
           {displayText(config.yLabel) ?? "-log10(p-value)"}
         </text>
       </svg>
@@ -937,7 +1111,7 @@ function VolcanoSvgPlot({ config, chartId, onElementToggle }: { config: ChartCon
   );
 }
 
-function BoxPlotSvg({ config, chartId, aspect, onElementToggle }: { config: ChartConfig; chartId: string; aspect: number; onElementToggle: (meta: ChartElementMetadata) => void }) {
+function BoxPlotSvg({ config, figure, chartId, aspect, onElementToggle }: { config: ChartConfig; figure: FigureModel; chartId: string; aspect: number; onElementToggle: (meta: ChartElementMetadata) => void }) {
   const { selectedElements, elementStyles } = useChartSelection();
   const data = config.data as Record<string, unknown>[];
   const xKey = config.xField ?? "group";
@@ -962,10 +1136,18 @@ function BoxPlotSvg({ config, chartId, aspect, onElementToggle }: { config: Char
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="block w-full" style={{ aspectRatio: String(aspect) }}>
-      {[0, 1, 2, 3, 4].map((i) => {
-        const y = plot.y + (plot.h * i) / 4;
-        return <line key={i} x1={plot.x} x2={plot.x + plot.w} y1={y} y2={y} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" />;
-      })}
+      {figure.grid?.visible !== false ? (
+        [0, 1, 2, 3, 4].map((i) => {
+          const y = plot.y + (plot.h * i) / 4;
+          return <line key={i} x1={plot.x} x2={plot.x + plot.w} y1={y} y2={y} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" />;
+        })
+      ) : null}
+      {figure.grid?.visible !== false && figure.grid?.x ? (
+        [0, 1, 2, 3, 4].map((i) => {
+          const x = plot.x + (plot.w * i) / 4;
+          return <line key={`vgrid-${i}`} x1={x} x2={x} y1={plot.y} y2={plot.y + plot.h} stroke={JOURNAL_CHART_STYLE.gridColor} strokeDasharray="2 4" />;
+        })
+      ) : null}
       <path d={`M${plot.x},${plot.y} V${plot.y + plot.h} H${plot.x + plot.w}`} fill="none" stroke={JOURNAL_CHART_STYLE.axisColor} strokeWidth={1.4} />
       {data.map((row, index) => {
         const category = String(row[xKey] ?? `Group ${index + 1}`);
@@ -1042,8 +1224,27 @@ function BoxPlotSvg({ config, chartId, aspect, onElementToggle }: { config: Char
           </g>
         );
       })}
-      <text x={plot.x + plot.w / 2} y={height - 12} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor}>{displayText(config.xLabel) ?? config.xField ?? ""}</text>
-      <text transform={`translate(16 ${plot.y + plot.h / 2}) rotate(-90)`} textAnchor="middle" fontSize={12} fill={JOURNAL_CHART_STYLE.axisColor}>{displayText(config.yLabel) ?? (displayText(config.unit) ?? config.unit ? `Value (${displayText(config.unit) ?? config.unit})` : "")}</text>
+      {/* Legend */}
+      {figure.legend?.visible !== false && figure.legend?.position !== "none" ? (
+        <g>
+          {data.map((row, i) => {
+            const category = String(row[xKey] ?? `Group ${i + 1}`);
+            const color = config.colors?.[i] ?? journalColor(i);
+            const legendY = plot.y + plot.h + 90 + i * 22;
+            const legendX = plot.x + 20;
+            return (
+              <g key={category}>
+                <rect x={legendX} y={legendY} width={12} height={12} fill={color} rx={2} />
+                <text x={legendX + 18} y={legendY + 10} fontSize={11}
+                  fill={JOURNAL_CHART_STYLE.mutedText}
+                  fontFamily={JOURNAL_CHART_STYLE.fontFamily}>{category}</text>
+              </g>
+            );
+          })}
+        </g>
+      ) : null}
+      <text x={plot.x + plot.w / 2} y={height - 12} textAnchor="middle" fontSize={figure.axes?.x?.style?.fontSize ?? 12} fill={JOURNAL_CHART_STYLE.axisColor}>{displayText(config.xLabel) ?? config.xField ?? ""}</text>
+      <text transform={`translate(16 ${plot.y + plot.h / 2}) rotate(${figure.axes?.y?.labelAngle ?? -90})`} textAnchor="middle" fontSize={figure.axes?.y?.style?.fontSize ?? 12} fill={JOURNAL_CHART_STYLE.axisColor}>{displayText(config.yLabel) ?? (displayText(config.unit) ?? config.unit ? `Value (${displayText(config.unit) ?? config.unit})` : "")}</text>
     </svg>
   );
 }

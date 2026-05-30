@@ -9,9 +9,10 @@ import {
 } from "lucide-react";
 
 import { useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
-import type { CollageItem, CollageLayout, CollageSpec } from "@/lib/chart-types";
+import type { CollageItem, CollageLayout, CollageSpec, ChartConfig } from "@/lib/chart-types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { CollageChartPreview } from "@/components/CollageChartPreview";
 
 const LAYOUTS: CollageLayout[] = ["freeform", "1x2", "2x1", "2x2", "2x3", "3x2"];
 
@@ -56,6 +57,7 @@ export function CollageToolbar({
           kind: a.kind,
           url: a.url,
           title: a.title,
+          chartConfig: a.chartConfig,
         })),
     [assets],
   );
@@ -222,13 +224,13 @@ function AssetPickerPopover({
   onSelect,
   onClose,
 }: {
-  assets: { id: string; kind: string; url?: string; title: string }[];
+  assets: { id: string; kind: string; url?: string; title: string; chartConfig?: ChartConfig }[];
   usedIds: Set<string>;
   onSelect: (id: string) => void;
   onClose: () => void;
 }) {
   return (
-    <div className="absolute left-0 top-full z-50 mt-1 w-60 rounded-lg border border-border bg-background p-2 shadow-lg">
+    <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-lg border border-border bg-background p-2 shadow-lg">
       <div className="mb-1 flex items-center justify-between">
         <span className="text-[11px] font-medium text-muted-foreground">
           Workspace Assets
@@ -246,7 +248,7 @@ function AssetPickerPopover({
           No assets yet — generate images or charts first
         </p>
       ) : (
-        <div className="max-h-48 space-y-1 overflow-y-auto">
+        <div className="max-h-64 space-y-1 overflow-y-auto">
           {addable.map((asset) => {
             const used = usedIds.has(asset.id);
             return (
@@ -266,11 +268,23 @@ function AssetPickerPopover({
                   <img
                     src={asset.url}
                     alt=""
-                    className="h-8 w-8 shrink-0 rounded object-cover"
+                    className="h-10 w-10 shrink-0 rounded object-cover"
                   />
+                ) : asset.chartConfig ? (
+                  <div className="h-10 w-14 shrink-0 overflow-hidden rounded border border-border/50">
+                    <CollageChartPreview
+                      asset={{
+                        id: asset.id,
+                        kind: "chart",
+                        title: asset.title,
+                        createdAt: 0,
+                        chartConfig: asset.chartConfig,
+                      }}
+                    />
+                  </div>
                 ) : (
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded bg-muted text-[10px] text-muted-foreground">
-                    {asset.kind === "chart" ? "Ch" : "?"}
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded bg-muted text-[10px] text-muted-foreground">
+                    ?
                   </div>
                 )}
                 <span className="min-w-0 truncate text-[11px]">{asset.title}</span>
