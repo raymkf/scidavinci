@@ -44,6 +44,9 @@ import type { SendImage } from "@/hooks/useScidavinciStream";
 import { cn } from "@/lib/utils";
 
 const MAX_DOCUMENTS_PER_MESSAGE = 5;
+const MAX_ATTACHMENT_SIZE = 50 * 1024 * 1024; // 50 MB hard limit
+const WARN_ATTACHMENT_SIZE = 20 * 1024 * 1024; // 20 MB soft warning
+const MAX_TOTAL_ATTACHMENT_SIZE = 100 * 1024 * 1024; // 100 MB total warning
 const SPREADSHEET_EXTENSIONS = new Set([".csv", ".tsv", ".xlsx", ".xls", ".ods"]);
 
 /** Server-side ``_DOCUMENT_MIME_ALLOWED`` mirror. */
@@ -213,8 +216,42 @@ export function ThreadComposer({
   const addFiles = useCallback(
     (files: File[]) => {
       if (files.length === 0) return;
+
+      // Attachment size checks
+      const oversized: string[] = [];
+      const warnSized: string[] = [];
+      let totalSize = 0;
+      for (const file of files) {
+        totalSize += file.size;
+        if (file.size > MAX_ATTACHMENT_SIZE) {
+          oversized.push(`${file.name} (${formatBytes(file.size)})`);
+        } else if (file.size > WARN_ATTACHMENT_SIZE) {
+          warnSized.push(`${file.name} (${formatBytes(file.size)})`);
+        }
+      }
+      if (oversized.length > 0) {
+        setInlineError(`Files exceed 50 MB limit: ${oversized.join(", ")}`);
+        return;
+      }
+      if (totalSize > MAX_TOTAL_ATTACHMENT_SIZE) {
+        setInlineError(`Total attachment size (${formatBytes(totalSize)}) exceeds 100 MB limit. Please reduce.`);
+        return;
+      }
+      if (warnSized.length > 0) {
+        setInlineError(`Large files may be compressed: ${warnSized.join(", ")}`);
+      }
+
       const imageFiles: File[] = [];
       const docFiles: File[] = [];
+      // Spreadsheet detection for profile-only hint
+      const largeSpreadsheets = files.filter(
+        (f) => isSpreadsheetName(f.name) && f.size > 1024 * 1024
+      );
+      if (largeSpreadsheets.length > 0) {
+        setInlineError(
+          `Large spreadsheets: ${largeSpreadsheets.map((f) => f.name).join(", ")} — only metadata will be sent to the model.`
+        );
+      }
       for (const f of files) {
         if (documentMimeFor(f)) {
           docFiles.push(f);
@@ -514,7 +551,7 @@ export function ThreadComposer({
         "Use list_datasets first and match each fileName to the available dataset_id.",
         "Only generate the chart types selected by the user.",
         "For each selected chart, inspect the dataset and ask the user for field/parameter choices if the mapping is ambiguous.",
-        "If all required fields are clear, call plot_dataset for each confirmed chart and return the chart-json blocks in the selected order.",
+        "If all required fields are clear, call plot_dataset for each confirmed chart and return the chart-image blocks in the selected order.",
       ],
     };
     const summary = selections

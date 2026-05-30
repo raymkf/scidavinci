@@ -17,6 +17,7 @@ from nanobot.agent.autocompact import AutoCompact
 from nanobot.agent.context import ContextBuilder
 from nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from nanobot.agent.memory import Consolidator, Dream
+from nanobot.agent.plan_tracker import PlanTracker
 from nanobot.agent.runner import _MAX_INJECTIONS_PER_TURN, AgentRunner, AgentRunSpec
 from nanobot.agent.skills import BUILTIN_SKILLS_DIR
 from nanobot.agent.subagent import SubagentManager
@@ -236,6 +237,8 @@ class AgentLoop:
             else defaults.max_tool_result_chars
         )
         self.provider_retry_mode = provider_retry_mode
+        self._seen_hashes: dict[str, set[str]] = {}  # session_key → MD5 hashes for dedup
+        self._plan_trackers: dict[str, PlanTracker] = {}  # session_key → PlanTracker
         self.web_config = web_config or WebToolsConfig()
         self.exec_config = exec_config or ExecToolConfig()
         self.datasets_config = _tc.datasets
@@ -920,9 +923,16 @@ class AgentLoop:
 
             # Subagent content is already in `history` above; passing it again
             # as current_message would double-project it into the prompt.
+            current_msg = "" if is_subagent else msg.content
+            # Inject plan execution status for ongoing plan flows
+            plan_tracker = self._plan_trackers.get(key)
+            if plan_tracker and current_msg:
+                plan_status = plan_tracker.get_status_summary()
+                if plan_status:
+                    current_msg = plan_status + "\n\n" + current_msg
             messages = self.context.build_messages(
                 history=history,
-                current_message="" if is_subagent else msg.content,
+                current_message=current_msg,
                 channel=channel,
                 chat_id=chat_id,
                 session_summary=pending,
@@ -935,6 +945,16 @@ class AgentLoop:
                 session_key=key,
                 pending_queue=pending_queue,
             )
+            # Track plan execution: scan model output for plot plans and chart generations
+            plan_tracker = self._plan_trackers.setdefault(key, PlanTracker())
+            if final_content:
+                plan_tracker.process_model_output(final_content)
+            # Also scan tool result messages for chart-image blocks (from plot_dataset)
+            for m in all_msgs:
+                if m.get("role") == "tool":
+                    tool_content = m.get("content", "")
+                    if isinstance(tool_content, str) and ("chart-image" in tool_content or "chart-canvas" in tool_content):
+                        plan_tracker.process_model_output(tool_content)
             self._save_turn(session, all_msgs, 1 + len(history))
             session.enforce_file_cap(on_archive=self.context.memory.raw_archive)
             self._clear_runtime_checkpoint(session)
@@ -966,8 +986,10 @@ class AgentLoop:
         # channels benefit without format-specific logic in ContextBuilder.
         if msg.media:
             inline = self.datasets_config.inline_spreadsheets
+            dedup_key = session_key or msg.session_key
+            seen = self._seen_hashes.setdefault(dedup_key, set())
             new_content, image_only = extract_documents(
-                msg.content, msg.media, inline_spreadsheets=inline,
+                msg.content, msg.media, inline_spreadsheets=inline, seen_hashes=seen,
             )
             if self.datasets_config.enabled and not inline:
                 from nanobot.agent.dataset.profile import generate_profile, profile_to_llm_text

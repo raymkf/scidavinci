@@ -12,7 +12,7 @@ const loadMarkdownRenderer = () => import("@/components/MarkdownTextRenderer");
 const LazyMarkdownRenderer = lazy(loadMarkdownRenderer);
 
 function hideChartJsonWhileLoading(markdown: string): string {
-  return markdown.replace(/```(?:chart-json|chart)\b[\s\S]*?(?:```|$)/g, "Rendering interactive chart…");
+  return markdown.replace(/```(?:chart-image|chart-canvas|canvas-chart)\b[\s\S]*?(?:```|$)/g, "Rendering interactive chart…");
 }
 
 export function preloadMarkdownText(): void {

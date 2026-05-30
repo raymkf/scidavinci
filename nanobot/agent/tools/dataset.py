@@ -8,14 +8,17 @@ and are registered by :class:`~nanobot.agent.loop.AgentLoop` when
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from nanobot.agent.tools.base import Tool, tool_parameters
+from nanobot.agent.tools.chart_renderer import render_chart
 from nanobot.agent.tools.schema import (
     IntegerSchema,
     StringSchema,
     tool_parameters_schema,
 )
+from nanobot.config.paths import get_media_dir
 
 if TYPE_CHECKING:
     from nanobot.agent.dataset.registry import DatasetRegistry
@@ -232,7 +235,12 @@ class QueryDatasetTool(Tool):
     dataset_id=StringSchema(description="Dataset ID from list_datasets"),
     chart_type=StringSchema(
         description="Chart type",
-        enum=["bar", "line", "pie", "area", "box", "volcano"],
+        enum=[
+            "bar", "line", "pie", "area", "box", "volcano",
+            "scatter", "violin", "heatmap", "pca", "bubble",
+            "venn", "upset", "histogram", "density",
+            "stacked_bar", "gsea", "correlation_heatmap", "enrichment_bar",
+        ],
     ),
     x_field=StringSchema(
         description="Column name for the x-axis / category axis",
@@ -262,17 +270,45 @@ class QueryDatasetTool(Tool):
         value=500, minimum=1, maximum=2000,
         description="Maximum data points in the chart (default 500)",
     ),
+    journal=StringSchema(
+        description="Journal style preset: nature, science, cell, lancet (default nature)",
+        nullable=True,
+        enum=["nature", "science", "cell", "lancet"],
+    ),
+    aspect_ratio=StringSchema(
+        description="Chart aspect ratio, e.g. '4:3', '1:1', '16:9' (default '4:3')",
+        nullable=True,
+    ),
+    x_label=StringSchema(
+        description="X-axis label (optional, derived from field name if omitted)",
+        nullable=True,
+    ),
+    y_label=StringSchema(
+        description="Y-axis label (optional, derived from field name if omitted)",
+        nullable=True,
+    ),
+    element_styles=StringSchema(
+        description="Optional: JSON string mapping element keys to style overrides. "
+        "Keys use 'category' (gene name, bar label) or 'series@@category' for grouped charts. "
+        'Example: \'{"TP53": {"color": "#FF0000", "fillOpacity": 0.5}, '
+        '"Treatment@@Cell Line A": {"color": "#D55E00"}}\'. '
+        "Supported style fields: color, fillOpacity, stroke, strokeWidth, pointSize, visible.",
+        nullable=True,
+    ),
 ))
 class PlotDatasetTool(Tool):
-    """Generate a chart-json code block from dataset data.
+    """Generate a publication-quality chart from dataset data using
+    Python matplotlib/seaborn.
 
-    The output is an `` ```chart-json `` fenced code block compatible with
-    the existing InteractiveChart rendering pipeline.  No frontend changes
-    are needed.
+    The output is a `` ```chart-image `` fenced code block containing a JSON
+    payload with the rendered PNG URL, overlay zones for interaction, and
+    metadata.  The frontend displays the PNG as a Konva image with a
+    transparent overlay layer for element selection.
     """
 
-    def __init__(self, registry: DatasetRegistry) -> None:
+    def __init__(self, registry: DatasetRegistry, output_dir: Path | None = None) -> None:
         self._registry = registry
+        self._output_dir = output_dir or get_media_dir("websocket")
 
     @property
     def name(self) -> str:
@@ -281,22 +317,25 @@ class PlotDatasetTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Generate an interactive chart from an uploaded dataset. "
-            "The chart is returned as a ```chart-json code block that the "
-            "frontend renders as an interactive visualization. "
+            "Generate a publication-quality interactive chart from an uploaded "
+            "dataset. The chart is rendered with Python matplotlib/seaborn and "
+            "returned as a ```chart-image code block containing the rendered PNG "
+            "URL and overlay zones for element interaction. "
             "For general requests like 'visualize this table', call this tool "
             "only after you have inspected/listed the dataset and confirmed "
             "which chart type(s) the user wants, usually via ask_user options. "
             "If the user selected multiple charts, call this once per selected "
-            "chart and copy each returned ```chart-json block verbatim into "
+            "chart and copy each returned ```chart-image block verbatim into "
             "the final assistant message. Do not create unselected charts. "
             "Use this AFTER inspecting or querying the dataset to understand "
             "its structure. "
-            "Supported chart types: bar, line, pie, area, box, volcano.\n"
+            "Supported chart types: bar, line, pie, area, box, volcano, "
+            "scatter, violin, heatmap, pca, bubble, venn, upset, histogram, "
+            "density, stacked_bar, gsea, correlation_heatmap, enrichment_bar.\n"
             "The chart data is computed from the FULL dataset file (not a sample), "
             "so aggregations and statistics are accurate.\n"
-            "After the chart is displayed, the user can interactively select "
-            "elements, change colours, and modify styles."
+            "The chart is rendered at 150 DPI (publication quality) and the "
+            "frontend overlay enables interactive element selection."
         )
 
     @property
@@ -314,6 +353,11 @@ class PlotDatasetTool(Tool):
         aggregate: str | None = None,
         top_n: int = 0,
         max_rows: int = 500,
+        journal: str | None = None,
+        aspect_ratio: str | None = None,
+        x_label: str | None = None,
+        y_label: str | None = None,
+        element_styles: str | None = None,
     ) -> str:
         entry = self._registry.get(dataset_id)
         if entry is None:
@@ -324,7 +368,6 @@ class PlotDatasetTool(Tool):
 
         # Auto-detect fields if not provided
         if not x_field:
-            # Use first string column or first column
             for c in profile.columns:
                 if c.dtype == "string":
                     x_field = c.name
@@ -333,12 +376,11 @@ class PlotDatasetTool(Tool):
                 x_field = profile.columns[0].name
 
         if not y_fields:
-            # Use first numeric column(s)
             num_cols = [c.name for c in profile.columns if c.dtype in ("integer", "float")]
             if num_cols:
-                y_fields = ",".join(num_cols[:3])  # up to 3 numeric columns
+                y_fields = ",".join(num_cols[:3])
             elif len(profile.columns) > 1:
-                y_fields = profile.columns[1].name  # fallback: second column
+                y_fields = profile.columns[1].name
 
         if not x_field or not y_fields:
             return (
@@ -362,7 +404,6 @@ class PlotDatasetTool(Tool):
             for yf in y_list:
                 select_parts.append(f'"{yf}"')
 
-        # Only GROUP BY when aggregating
         if agg_func:
             group_clause = f'"{x_field}"'
             if group_field and group_field != x_field:
@@ -373,7 +414,7 @@ class PlotDatasetTool(Tool):
                 f" GROUP BY {group_clause}"
             )
         else:
-            sql = f"SELECT {', '.join(select_parts)} FROM data"
+            sql = "SELECT * FROM data"
 
         if top_n > 0 and agg_func:
             sql += f" ORDER BY \"{y_list[0]}\" DESC"
@@ -386,7 +427,6 @@ class PlotDatasetTool(Tool):
         if raw_result.startswith("Error"):
             return raw_result
 
-        # Extract the tab-separated data
         data_text = raw_result
         if "Query result:" in data_text:
             _, _, data_text = data_text.partition("\n\n")
@@ -398,7 +438,7 @@ class PlotDatasetTool(Tool):
         headers = lines[0].split("\t")
         data_rows = lines[1:]
 
-        # Build chart-json data array
+        # Build data array
         chart_data: list[dict[str, Any]] = []
         for row_text in data_rows:
             parts = row_text.split("\t")
@@ -418,29 +458,44 @@ class PlotDatasetTool(Tool):
         if not chart_data:
             return "Error: no data rows in query result."
 
-        # Determine chart type specifics
+        # Build render config
         resolved_y_field = y_list[0]
         y_fields_list = y_list if len(y_list) > 1 else None
 
-        config: dict[str, Any] = {
+        render_config: dict[str, Any] = {
             "type": chart_type,
             "title": title or f"{' vs '.join(y_list)} by {x_field}",
             "xField": x_field,
             "yField": resolved_y_field,
-            "data": chart_data,
+            "journal": journal,
+            "aspectRatio": aspect_ratio,
+            "xLabel": x_label,
+            "yLabel": y_label,
         }
 
         if y_fields_list:
-            config["yFields"] = y_fields_list
+            render_config["yFields"] = y_fields_list
+        if group_field:
+            render_config["groupField"] = group_field
+        if element_styles:
+            try:
+                render_config["elementStyles"] = json.loads(element_styles)
+            except json.JSONDecodeError:
+                pass
 
+        # Chart-type-specific field mappings
         if chart_type == "pie":
-            config["valueField"] = resolved_y_field
-            config["nameField"] = x_field
+            render_config["valueField"] = resolved_y_field
+            render_config["nameField"] = x_field
         elif chart_type == "volcano":
-            config["xValueField"] = x_field
-            config["yValueField"] = resolved_y_field
-        elif chart_type == "box":
-            config["type"] = "box"
+            render_config["xValueField"] = x_field
+            render_config["yValueField"] = resolved_y_field
 
-        json_str = json.dumps(config, ensure_ascii=False, indent=2)
-        return f"```chart-json\n{json_str}\n```"
+        # Render with matplotlib
+        result = render_chart(chart_type, chart_data, render_config, self._output_dir)
+
+        # Build image URL (relative path served by /api/charts/ route)
+        image_url = f"/api/charts/{result.image_path.split('/')[-1]}"
+
+        chart_json = result.to_chart_image_json(image_url)
+        return f"```chart-image\n{chart_json}\n```"

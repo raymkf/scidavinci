@@ -1,7 +1,7 @@
 /** Structured metadata bound to each clickable chart element. */
 export interface ChartElementMetadata {
   elementId: string;
-  chartType: "bar" | "line" | "pie" | "area" | "radar" | "scatter" | "heatmap" | "volcano" | "box";
+  chartType: "bar" | "line" | "pie" | "area" | "radar" | "scatter" | "heatmap" | "volcano" | "box" | "violin" | "pca" | "bubble" | "venn" | "upset" | "histogram" | "density" | "stacked_bar" | "gsea" | "correlation_heatmap" | "enrichment_bar";
   series: string;
   category: string | number;
   value: number;
@@ -377,9 +377,9 @@ export interface ChartSignificance {
   pValue?: string | number;
 }
 
-/** Chart rendering configuration from a chart-json code block. */
+/** Chart rendering configuration from a chart-canvas code block. */
 export interface ChartConfig {
-  type: "bar" | "line" | "pie" | "area" | "volcano" | "box";
+  type: "bar" | "line" | "pie" | "area" | "volcano" | "box" | "scatter" | "violin" | "heatmap" | "pca" | "bubble" | "venn" | "upset" | "histogram" | "density" | "stacked_bar" | "gsea" | "correlation_heatmap" | "enrichment_bar";
   title?: string;
   /** Figure aspect ratio, e.g. "4:3", "1:1", "16:9", or a number. */
   aspectRatio?: string | number;
@@ -441,6 +441,27 @@ export interface ChartConfig {
   description?: string;
 }
 
+/** Backend-rendered chart image with overlay zones for interaction. */
+export interface ChartImageZone {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface ChartImageConfig {
+  imageUrl: string;
+  imageWidth: number;
+  imageHeight: number;
+  type: ChartConfig["type"];
+  title?: string;
+  fieldMappings?: Record<string, unknown>;
+  data?: Record<string, unknown>[];
+  zones: ChartImageZone[];
+}
+
 export type VisualAssetKind = "image" | "chart" | "collage";
 
 export interface VisualAsset {
@@ -453,6 +474,7 @@ export interface VisualAsset {
   url?: string;
   background?: FillSpec;
   chartConfig?: ChartConfig;
+  chartImageConfig?: ChartImageConfig;
   collage?: CollageSpec;
 }
 

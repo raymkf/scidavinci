@@ -5,7 +5,8 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 
 import { CodeBlock } from "@/components/CodeBlock";
-import { InteractiveChart, parseChartCodeBlock } from "@/components/InteractiveChart";
+import InteractiveChartKonva, { parseChartCodeBlock as parseChartCanvasCodeBlock, parseChartImageCodeBlock } from "@/components/InteractiveChartKonva";
+import { PlanCard, parsePlanFromText } from "@/components/thread/PlanCard";
 import { useVisualWorkspace } from "@/contexts/VisualWorkspaceContext";
 import remarkTableToChart from "@/lib/remark-table-to-chart";
 import { cn } from "@/lib/utils";
@@ -94,7 +95,7 @@ export default function MarkdownTextRenderer({
         rehypePlugins={[rehypeKatex]}
         components={{
           code({ className: cls, children: kids, ...props }) {
-            const match = /language-(\w+)/.exec(cls || "");
+            const match = /language-([\w-]+)/.exec(cls || "");
             if (!match) {
               return (
                 <code
@@ -110,21 +111,65 @@ export default function MarkdownTextRenderer({
             }
             const lang = match[1];
             const code = String(kids).replace(/\n$/, "");
-            // Render chart-json code blocks as interactive charts
-            if (lang === "chart-json" || lang === "chart") {
-              const chartConfig = parseChartCodeBlock(code);
-              if (chartConfig) {
+            // Render chart-image code blocks (backend matplotlib PNG + Konva overlay)
+            if (lang === "chart-image") {
+              const chartImageConfig = parseChartImageCodeBlock(code);
+              if (chartImageConfig) {
+                const fieldMappings = (chartImageConfig.fieldMappings ?? {}) as Record<string, unknown>;
                 return (
-                  <InteractiveChart
-                    config={chartConfig}
-                    assetId={`${sourceId}-chart-${stableHash(code)}`}
+                  <InteractiveChartKonva
+                    config={{
+                      type: chartImageConfig.type,
+                      data: chartImageConfig.data ?? [],
+                      title: chartImageConfig.title,
+                      ...fieldMappings,
+                    }}
+                    imageConfig={chartImageConfig}
+                    assetId={`${sourceId}-chartimg-${stableHash(code)}`}
                     sourceMessageId={sourceId}
                   />
                 );
               }
               return (
                 <div className="my-3 rounded-md border border-border/60 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
-                  Rendering interactive chart…
+                  Rendering chart image...
+                </div>
+              );
+            }
+            // Render chart-canvas code blocks with Konva (Canvas+Overlay renderer)
+            if (lang === "chart-canvas" || lang === "canvas-chart") {
+              const chartConfig = parseChartCanvasCodeBlock(code, lang);
+              if (chartConfig) {
+                return (
+                  <InteractiveChartKonva
+                    config={chartConfig}
+                    assetId={`${sourceId}-canvas-${stableHash(code)}`}
+                    sourceMessageId={sourceId}
+                  />
+                );
+              }
+              return (
+                <div className="my-3 rounded-md border border-border/60 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+                  Rendering canvas chart…
+                </div>
+              );
+            }
+            // Render plot_plan code blocks as interactive plan cards
+            if (lang === "plot_plan") {
+              const plan = parsePlanFromText(code);
+              if (plan) {
+                return (
+                  <PlanCard
+                    plan={plan}
+                    onConfirm={(_selectedTypes) => {
+                      // Selection handled by PlanCard; actual send via MessageBubble
+                    }}
+                  />
+                );
+              }
+              return (
+                <div className="my-3 rounded-md border border-border/60 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+                  Rendering plot plan…
                 </div>
               );
             }
